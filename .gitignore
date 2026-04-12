@@ -1,0 +1,16 @@
+# Xcode
+build/
+DerivedData/
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+xcuserdata/
+
+# macOS
+.DS_Store
+
+# Vendored binary assets (fetched locally; see README)
+LocalTranslator Extension/Resources/vendor/tesseract/*.js
+LocalTranslator Extension/Resources/vendor/tesseract/*.wasm
+LocalTranslator Extension/Resources/vendor/traineddata/*.traineddata
+LocalTranslator Extension/Resources/icons/*.png

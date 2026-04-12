@@ -1,0 +1,53 @@
+/* overlay.css — styles for translated text bubbles rendered by overlay.js.
+ * Scoped with hard-to-collide class names so host pages can't easily break it.
+ */
+
+.lt-overlay-root {
+  position: absolute;
+  pointer-events: none;
+  z-index: 2147483646; /* just under max to let page UI still show */
+  overflow: hidden;
+}
+
+.lt-overlay-bubble {
+  position: absolute;
+  background: rgba(255, 255, 255, 0.94);
+  color: #111;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text",
+    "Helvetica Neue", Arial, sans-serif;
+  font-weight: 500;
+  text-align: center;
+  padding: 4px 6px;
+  border-radius: 10px;
+  line-height: 1.15;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+  /* Auto-shrink-to-fit: we use a container query-ish trick via clamp()
+   * against the element's size. Browsers that don't support container
+   * units fall back to a sane baseline. */
+  font-size: clamp(8px, 2.2cqh, 22px);
+  container-type: size;
+  word-break: break-word;
+  hyphens: auto;
+  -webkit-hyphens: auto;
+  pointer-events: auto; /* allow copy-selecting the translation */
+  user-select: text;
+}
+
+@supports not (container-type: size) {
+  .lt-overlay-bubble {
+    font-size: 13px;
+  }
+}
+
+/* Respect reduced-motion / high-contrast users. */
+@media (prefers-contrast: more) {
+  .lt-overlay-bubble {
+    background: #ffffff;
+    box-shadow: inset 0 0 0 2px #000;
+    color: #000;
+  }
+}
