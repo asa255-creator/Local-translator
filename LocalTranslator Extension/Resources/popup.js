@@ -1,6 +1,8 @@
 // popup.js — UI controller for the Local Translator extension popup.
 // Communicates with the background service worker and the active tab's
 // content script. All messages stay local; no network calls are made.
+// Model download status is read from chrome.storage.local (written by
+// background/translator.js) and reflected live via storage.onChanged.
 
 const api = typeof browser !== "undefined" ? browser : chrome;
 
@@ -69,7 +71,7 @@ clearBtn.addEventListener("click", async () => {
   statusEl.textContent = "Overlays removed.";
 });
 
-// Progress updates from content script.
+// ── Page-processing progress (from content script via background relay) ──────
 api.runtime.onMessage.addListener((msg) => {
   if (msg?.type === "PROGRESS") {
     const { current, total, label } = msg;
@@ -85,4 +87,50 @@ api.runtime.onMessage.addListener((msg) => {
   }
 });
 
+// ── Model download / status display ─────────────────────────────────────────
+const mtDot    = document.getElementById("mt-dot");
+const mtStatus = document.getElementById("mt-status");
+const mtBarWrap = document.getElementById("mt-bar-wrap");
+const mtBar    = document.getElementById("mt-bar");
+
+const PHASE_DOT = {
+  idle        : "",
+  downloading : "dot-downloading",
+  loading     : "dot-loading",
+  ready       : "dot-ok",
+  error       : "dot-error",
+};
+const PHASE_LABEL = {
+  idle        : "Not yet downloaded",
+  ready       : "Ready · offline",
+};
+
+function applyModelStatus(s) {
+  if (!s) return;
+  // Update indicator dot
+  mtDot.className = "dot " + (PHASE_DOT[s.phase] ?? "");
+  // Update label
+  mtStatus.textContent = PHASE_LABEL[s.phase] ?? s.label ?? s.phase;
+  // Show/hide progress bar
+  if (s.phase === "downloading" && s.pct != null) {
+    mtBarWrap.classList.remove("hidden");
+    mtBar.style.width = s.pct + "%";
+  } else {
+    mtBarWrap.classList.add("hidden");
+  }
+}
+
+async function loadModelStatus() {
+  const { lt_modelStatus: s } = await api.storage.local.get("lt_modelStatus");
+  applyModelStatus(s);
+}
+
+// Live updates while popup is open (e.g. during initial model download).
+api.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && changes.lt_modelStatus) {
+    applyModelStatus(changes.lt_modelStatus.newValue);
+  }
+});
+
 loadState();
+loadModelStatus();

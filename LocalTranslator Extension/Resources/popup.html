@@ -45,8 +45,32 @@
       </div>
     </section>
 
+    <section class="models">
+      <div class="model-heading">Models</div>
+
+      <div class="model-row">
+        <span class="dot dot-ok"></span>
+        <div>
+          <div class="model-name">OCR — Tesseract.js</div>
+          <div class="model-sub" id="ocr-status">Bundled · offline</div>
+        </div>
+      </div>
+
+      <div class="model-row">
+        <span class="dot" id="mt-dot"></span>
+        <div>
+          <div class="model-name">Translation — opus-mt (NMT)</div>
+          <div class="model-sub" id="mt-status">Checking…</div>
+        </div>
+      </div>
+
+      <div id="mt-bar-wrap" class="progress hidden">
+        <div class="bar" id="mt-bar"></div>
+      </div>
+    </section>
+
     <footer>
-      <small>100% offline. No network requests are made.</small>
+      <small>OCR is fully offline. Translation model downloads once (~150 MB), then offline.</small>
     </footer>
 
     <script src="popup.js"></script>

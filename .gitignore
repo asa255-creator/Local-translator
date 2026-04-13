@@ -9,8 +9,9 @@ xcuserdata/
 # macOS
 .DS_Store
 
-# Vendored binary assets (fetched locally; see README)
+# Vendored binary assets — run scripts/download-vendors.sh to fetch them.
 LocalTranslator Extension/Resources/vendor/tesseract/*.js
 LocalTranslator Extension/Resources/vendor/tesseract/*.wasm
 LocalTranslator Extension/Resources/vendor/traineddata/*.traineddata
+LocalTranslator Extension/Resources/vendor/transformers.min.js
 LocalTranslator Extension/Resources/icons/*.png

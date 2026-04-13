@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Local Translator",
   "version": "0.1.0",
-  "description": "Offline Safari extension that detects Japanese/Chinese text in images, finds speech bubbles, and overlays English translations. No network access.",
+  "description": "Offline image translator: detects Japanese/Chinese text in speech bubbles and overlays English translations. Models download once from free CDNs, then run fully offline.",
   "default_locale": "en",
 
   "action": {
@@ -58,6 +58,6 @@
   ],
 
   "content_security_policy": {
-    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self'; default-src 'self'"
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.huggingface.co; default-src 'self'"
   }
 }

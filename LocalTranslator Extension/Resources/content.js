@@ -4,15 +4,15 @@
 //   1. Collect eligible <img> elements on the page.
 //   2. For each image:
 //      a. Draw to an offscreen canvas (same-origin or cached by Safari).
-//      b. Ask bubble-detector.js to propose candidate speech-bubble regions.
-//      c. Ask ocr.js (Tesseract.js worker) to OCR each region with
-//         Japanese/Chinese models loaded from the extension bundle.
-//      d. Translate recognised text via the bundled offline dictionary.
-//      e. Ask overlay.js to render the translated text over the original
-//         bubble, masking the source text.
+//      b. bubble-detector.js: propose candidate speech-bubble regions.
+//      c. ocr.js: Tesseract.js OCR on each region (offline, vendor bundle).
+//      d. translateViaBackground(): send detected text to background service
+//         worker which runs the offline Transformers.js / opus-mt pipeline.
+//      e. overlay.js: render translated text over the original bubble.
 //
-// Nothing here touches the network. All modules are loaded from the
-// extension's own resources via chrome-extension:// URLs.
+// Network: content scripts are NOT governed by the extension_pages CSP.
+// Tesseract.js vendor files are loaded from chrome-extension:// URLs (offline).
+// Translation is handled by the service worker — content.js is network-free.
 
 const api = typeof browser !== "undefined" ? browser : chrome;
 
@@ -32,14 +32,34 @@ const STATE = {
 async function loadModules() {
   if (STATE.modules) return STATE.modules;
   const base = api.runtime.getURL("lib/");
-  const [ocr, detector, translator, overlay] = await Promise.all([
+  // translator.js is NOT loaded here — translation is handled by the background
+  // service worker (see translateViaBackground below).
+  const [ocr, detector, overlay] = await Promise.all([
     import(base + "ocr.js"),
     import(base + "bubble-detector.js"),
-    import(base + "translator.js"),
     import(base + "overlay.js"),
   ]);
-  STATE.modules = { ocr, detector, translator, overlay };
+  STATE.modules = { ocr, detector, overlay };
   return STATE.modules;
+}
+
+// Send OCR'd text to the background service worker for offline neural
+// translation. The background owns the Transformers.js pipeline so model
+// weights are cached once in the extension's shared Cache Storage.
+async function translateViaBackground(text, lang) {
+  try {
+    const resp = await api.runtime.sendMessage({
+      type: "TRANSLATE",
+      text,
+      lang: lang ?? "jpn",
+    });
+    if (resp?.ok) return resp.text;
+    console.warn("[LT] Translation failed:", resp?.error);
+    return text; // fall back to original on error
+  } catch (err) {
+    console.warn("[LT] Background unreachable:", err);
+    return text;
+  }
 }
 
 // ---------- Image collection ----------
@@ -96,7 +116,7 @@ async function processImage(img, modules) {
       lang: STATE.sourceLang,
     });
     if (!ocrResult.text || !ocrResult.text.trim()) continue;
-    const english = await modules.translator.translate(
+    const english = await translateViaBackground(
       ocrResult.text,
       ocrResult.detectedLang ?? STATE.sourceLang
     );
