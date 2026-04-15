@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Local Translator</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Local Translator</h1>
+      <p class="tagline">Offline image translation</p>
+    </header>
+
+    <section class="toggle-row">
+      <label class="switch">
+        <input type="checkbox" id="enabled-toggle" />
+        <span class="slider"></span>
+      </label>
+      <div>
+        <div class="toggle-label">Translate images on this page</div>
+        <div class="toggle-hint" id="toggle-hint">Off</div>
+      </div>
+    </section>
+
+    <section class="lang-row">
+      <label for="source-lang">Source language</label>
+      <select id="source-lang">
+        <option value="auto">Auto-detect</option>
+        <option value="jpn">Japanese</option>
+        <option value="chi_sim">Chinese (Simplified)</option>
+        <option value="chi_tra">Chinese (Traditional)</option>
+      </select>
+    </section>
+
+    <section class="actions">
+      <button id="rescan-btn" type="button">Rescan page</button>
+      <button id="clear-btn" type="button" class="secondary">Remove overlays</button>
+    </section>
+
+    <section class="status">
+      <div id="status-text">Idle.</div>
+      <div id="progress" class="progress hidden">
+        <div class="bar" id="progress-bar"></div>
+      </div>
+    </section>
+
+    <section class="models">
+      <div class="model-heading">Models</div>
+
+      <div class="model-row">
+        <span class="dot dot-ok"></span>
+        <div>
+          <div class="model-name">OCR — Tesseract.js</div>
+          <div class="model-sub" id="ocr-status">Bundled · offline</div>
+        </div>
+      </div>
+
+      <div class="model-row">
+        <span class="dot" id="mt-dot"></span>
+        <div>
+          <div class="model-name">Translation — opus-mt (NMT)</div>
+          <div class="model-sub" id="mt-status">Checking…</div>
+        </div>
+      </div>
+
+      <div id="mt-bar-wrap" class="progress hidden">
+        <div class="bar" id="mt-bar"></div>
+      </div>
+    </section>
+
+    <footer>
+      <small>OCR is fully offline. Translation model downloads once (~150 MB), then offline.</small>
+    </footer>
+
+    <script src="popup.js"></script>
+  </body>
+</html>
