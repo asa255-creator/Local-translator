@@ -17,48 +17,20 @@ api.runtime.onInstalled.addListener(async () => {
   preWarm();
 });
 
-// ── Content script injection ─────────────────────────────────────────────────
-// Safari's manifest-based content_scripts injection is unreliable for
-// locally-built extensions. We inject programmatically on every tab load so
-// we control the timing and get real error reporting if it fails.
-
-const CS_FILES = [
-  "lib/bubble-detector.js",
-  "lib/ocr.js",
-  "lib/overlay.js",
-  "content.js",
-];
-
-async function injectContentScripts(tabId) {
-  try {
-    await api.scripting.executeScript({ target: { tabId }, files: CS_FILES });
-    await api.scripting.insertCSS({ target: { tabId }, files: ["overlay.css"] });
-  } catch (err) {
-    // Normal for chrome://, PDF, extension pages, etc. Log real errors.
-    if (!String(err).includes("Cannot access") && !String(err).includes("chrome://")) {
-      console.warn("[LT] Content script injection failed:", err);
-      await api.storage.local.set({ lt_inject_error: String(err) });
-    }
-  }
-}
-
 // ── Tab lifecycle ────────────────────────────────────────────────────────────
 
 api.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
   if (changeInfo.status !== "complete") return;
-
-  // Inject content scripts into every completed tab. The content script guards
-  // against double-injection with window._LT_CS.
-  await injectContentScripts(tabId);
-
-  // If extension is enabled, tell the (now-injected) content script to scan.
-  const { enabled, sourceLang } = await api.storage.local.get(["enabled", "sourceLang"]);
+  const { enabled, sourceLang } = await api.storage.local.get([
+    "enabled",
+    "sourceLang",
+  ]);
   if (!enabled) return;
   try {
     await api.tabs.sendMessage(tabId, { type: "SET_ENABLED", enabled: true, sourceLang });
     await api.tabs.sendMessage(tabId, { type: "RESCAN" });
   } catch {
-    // Content script didn't load (e.g. chrome://, PDF) — ignore.
+    // Content script not available (chrome://, PDF, etc.) — ignore.
   }
 });
 

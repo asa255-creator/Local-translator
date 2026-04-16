@@ -1,13 +1,7 @@
 // content.js — orchestrates image translation on the page.
 //
-// Injected programmatically by background.js via scripting.executeScript().
-// lib/bubble-detector.js, lib/ocr.js, lib/overlay.js run first and expose
-// their functions on window._LT so this file can call them directly.
-
-// Double-injection guard: scripting.executeScript runs on every page load,
-// but the manifest may also inject this. Only run once per page.
-if (window._LT_CS) throw new Error("[LT] already loaded");
-window._LT_CS = true;
+// lib/bubble-detector.js, lib/ocr.js, lib/overlay.js are injected first by
+// the manifest and expose their functions on window._LT.
 
 const api = typeof browser !== "undefined" ? browser : chrome;
 
