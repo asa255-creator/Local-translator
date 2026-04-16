@@ -10,6 +10,12 @@
 
 const api = typeof browser !== "undefined" ? browser : chrome;
 
+// Diagnostic: written at script-load time so the popup dev panel can confirm
+// whether Safari actually injected this content script into the page.
+try {
+  api.storage.local.set({ lt_cs_injected: Date.now(), lt_cs_url: location.href.slice(0, 120) });
+} catch (_) {}
+
 const STATE = {
   enabled: false,
   sourceLang: "auto",

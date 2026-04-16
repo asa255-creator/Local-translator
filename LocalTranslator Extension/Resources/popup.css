@@ -231,6 +231,14 @@ footer {
   margin-top: 8px;
   border: 1px solid var(--border);
 }
+.dev-cs-status {
+  padding: 5px 10px;
+  font-size: 11px;
+  font-family: ui-monospace, monospace;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+  word-break: break-all;
+}
 .dev-log-header {
   display: flex;
   align-items: center;

@@ -32,7 +32,8 @@ export async function getModelStatus() {
 export const CDN = {
   transformers: "https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2/dist/transformers.min.js",
   onnxWasmBase: "https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.2/dist/",
-  // Hugging Face model repo IDs (fetched by Transformers.js internals)
-  modelJa: "Helsinki-NLP/opus-mt-ja-en",
-  modelZh: "Helsinki-NLP/opus-mt-zh-en",
+  // Xenova/ namespace = ONNX-converted versions required by Transformers.js v2.
+  // Helsinki-NLP/ originals are PyTorch only and will hang on first download.
+  modelJa: "Xenova/opus-mt-ja-en",
+  modelZh: "Xenova/opus-mt-zh-en",
 };

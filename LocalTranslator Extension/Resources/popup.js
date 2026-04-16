@@ -132,6 +132,9 @@ api.storage.onChanged.addListener((changes, area) => {
   if (changes.lt_modelStatus) {
     applyModelStatus(changes.lt_modelStatus.newValue);
   }
+  if (changes.lt_cs_injected) {
+    renderCsStatus(changes.lt_cs_injected.newValue, changes.lt_cs_url?.newValue);
+  }
   if (changes.lt_devLog) {
     const entries = changes.lt_devLog.newValue ?? [];
     if (entries.length < _lastLogLen) {
@@ -176,13 +179,30 @@ function renderDevEntries(entries) {
   if (newEntries.length > 0) devLogEl.scrollTop = devLogEl.scrollHeight;
 }
 
+const devCsStatusEl = document.getElementById("dev-cs-status");
+
+function renderCsStatus(injectedAt, url) {
+  if (!devCsStatusEl) return;
+  if (injectedAt) {
+    const ago = Math.round((Date.now() - injectedAt) / 1000);
+    devCsStatusEl.textContent = `Content script: injected ${ago}s ago on ${url ?? "?"}`;
+    devCsStatusEl.style.color = "#4ade80";
+  } else {
+    devCsStatusEl.textContent = "Content script: NOT detected on this page";
+    devCsStatusEl.style.color = "#f87171";
+  }
+}
+
 async function loadDevMode() {
-  const { devMode = false, lt_devLog: entries = [] } = await api.storage.local.get([
+  const { devMode = false, lt_devLog: entries = [], lt_cs_injected: injectedAt, lt_cs_url: csUrl } = await api.storage.local.get([
     "devMode",
     "lt_devLog",
+    "lt_cs_injected",
+    "lt_cs_url",
   ]);
   devToggle.checked = devMode;
   devPanel.classList.toggle("hidden", !devMode);
+  renderCsStatus(injectedAt, csUrl);
   // Show entries from any scan that already ran (e.g. popup opened mid-scan).
   _lastLogLen = 0;
   renderDevEntries(entries);
