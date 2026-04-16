@@ -14,6 +14,8 @@ const DEFAULTS = {
 api.runtime.onInstalled.addListener(async () => {
   const existing = await api.storage.local.get(Object.keys(DEFAULTS));
   await api.storage.local.set({ ...DEFAULTS, ...existing });
+  // Clear any stale diagnostic keys from previous sessions.
+  await api.storage.local.remove(["lt_inject_error", "lt_cs_injected", "lt_cs_url"]);
   preWarm();
 });
 
