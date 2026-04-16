@@ -117,30 +117,70 @@ function reportProgress(current, total, label) {
     .catch(() => {});
 }
 
+// Send a developer-mode log entry to the popup (via background relay).
+// The popup only displays these when the dev toggle is on; if it's closed
+// or dev mode is off the message is silently dropped.
+function devLog(entry, kind) {
+  api.runtime.sendMessage({ type: "DEV_LOG", entry, kind }).catch(() => {});
+}
+
+// Short label for an image element (last path segment of URL, max 40 chars).
+function imgLabel(img) {
+  try {
+    const name = new URL(img.src).pathname.split("/").filter(Boolean).pop() ?? "";
+    return name.length > 40 ? "…" + name.slice(-37) : name || img.src.slice(-30);
+  } catch {
+    return img.src.slice(-30);
+  }
+}
+
 async function processImage(img, modules) {
+  const label = imgLabel(img);
+
   const canvas = await imageToCanvas(img);
-  if (!canvas) return { skipped: "tainted" };
+  if (!canvas) {
+    devLog(`[SKIP] ${label} — cross-origin (re-fetch failed)`, "skip");
+    return { skipped: "tainted" };
+  }
 
   const regions = await modules.detector.findBubbles(canvas);
-  if (regions.length === 0) return { skipped: "no-bubbles" };
+  if (regions.length === 0) {
+    devLog(`[SKIP] ${label} — no speech bubbles detected`, "skip");
+    return { skipped: "no-bubbles" };
+  }
+  devLog(`[IMG]  ${label} — ${regions.length} bubble(s) found`, "scan");
 
   const translations = [];
-  for (const region of regions) {
+  for (let i = 0; i < regions.length; i++) {
+    const region = regions[i];
     const ocrResult = await modules.ocr.recognize(canvas, region, {
       lang: STATE.sourceLang,
     });
-    if (!ocrResult.text || !ocrResult.text.trim()) continue;
+    if (!ocrResult.text || !ocrResult.text.trim()) {
+      devLog(`  bubble ${i + 1}: OCR returned no text`, "skip");
+      continue;
+    }
+    devLog(
+      `  bubble ${i + 1}: OCR "${ocrResult.text.slice(0, 50).replace(/\n/g, " ")}…"` +
+      ` (conf ${Math.round(ocrResult.confidence ?? 0)}%)`,
+      "ocr"
+    );
     const english = await translateViaBackground(
       ocrResult.text,
       ocrResult.detectedLang ?? STATE.sourceLang
     );
+    devLog(`  bubble ${i + 1}: → "${english.slice(0, 60).replace(/\n/g, " ")}"`, "xlat");
     translations.push({ region, original: ocrResult.text, english });
   }
-  if (translations.length === 0) return { skipped: "no-text" };
+  if (translations.length === 0) {
+    devLog(`[SKIP] ${label} — OCR found no usable text`, "skip");
+    return { skipped: "no-text" };
+  }
 
   const overlay = modules.overlay.renderOverlay(img, canvas, translations);
   STATE.overlays.set(img, overlay);
   STATE.processed.add(img);
+  devLog(`[OK]   ${label} — ${translations.length} overlay(s) placed`, "ok");
   return { translations: translations.length };
 }
 
@@ -152,11 +192,13 @@ async function rescan() {
     reportProgress(0, 0, "No images found.");
     return;
   }
+  devLog(`[SCAN] ${targets.length} image(s) eligible on this page`, "scan");
   let done = 0;
   for (const img of targets) {
     try {
       await processImage(img, modules);
     } catch (err) {
+      devLog(`[ERR]  ${imgLabel(img)}: ${err.message}`, "err");
       console.warn("[LocalTranslator] failed on image", img.src, err);
     }
     done++;

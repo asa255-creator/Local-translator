@@ -70,7 +70,7 @@ api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   // ── Progress / status relay to popup ────────────────────────────────────
   // Content scripts send PROGRESS / STATUS updates. Rebroadcast so the popup
   // can display them even though it can't receive tab messages directly.
-  if (msg?.type === "PROGRESS" || msg?.type === "STATUS") {
+  if (msg?.type === "PROGRESS" || msg?.type === "STATUS" || msg?.type === "DEV_LOG") {
     api.runtime.sendMessage(msg).catch(() => {});
     // no sendResponse needed
   }

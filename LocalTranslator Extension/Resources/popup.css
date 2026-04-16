@@ -26,7 +26,7 @@ body {
   color: var(--fg);
   margin: 0;
   padding: 16px;
-  width: 320px;
+  width: 340px;
   font-size: 13px;
 }
 
@@ -55,12 +55,17 @@ section { margin-bottom: 14px; }
 .toggle-label { font-weight: 600; }
 .toggle-hint { color: var(--muted); font-size: 12px; margin-top: 2px; }
 
+/* ── Toggle switch ── */
 .switch {
   position: relative;
   display: inline-block;
   width: 44px;
   height: 26px;
   flex-shrink: 0;
+}
+.switch.switch-sm {
+  width: 36px;
+  height: 22px;
 }
 .switch input { opacity: 0; width: 0; height: 0; }
 .slider {
@@ -82,8 +87,13 @@ section { margin-bottom: 14px; }
   border-radius: 50%;
   transition: transform 0.2s;
 }
+.switch.switch-sm .slider::before {
+  height: 18px;
+  width: 18px;
+}
 .switch input:checked + .slider { background: var(--accent); }
 .switch input:checked + .slider::before { transform: translateX(18px); }
+.switch.switch-sm input:checked + .slider::before { transform: translateX(14px); }
 
 .lang-row {
   display: flex;
@@ -117,6 +127,7 @@ select, button {
 }
 #status-text { font-size: 12px; }
 
+/* ── Progress bars ── */
 .progress {
   height: 4px;
   background: var(--border);
@@ -128,10 +139,22 @@ select, button {
   height: 100%;
   width: 0;
   background: var(--accent);
-  transition: width 0.2s;
+  transition: width 0.3s;
+  border-radius: 2px;
+}
+/* Indeterminate: shown when model is loading but no % available */
+.progress.indeterminate .bar {
+  width: 35% !important;
+  transition: none;
+  animation: indeterminate 1.4s ease-in-out infinite;
+}
+@keyframes indeterminate {
+  0%   { transform: translateX(-150%); }
+  100% { transform: translateX(450%); }
 }
 .hidden { display: none; }
 
+/* ── Models section ── */
 .models {
   background: var(--surface);
   border-radius: 8px;
@@ -167,12 +190,89 @@ select, button {
   transition: background 0.3s;
 }
 .dot-ok          { background: #34c759; }
-.dot-downloading { background: var(--accent); }
-.dot-loading     { background: #ff9f0a; }
+.dot-downloading { background: var(--accent); animation: pulse 1s ease-in-out infinite; }
+.dot-loading     { background: #ff9f0a; animation: pulse 1s ease-in-out infinite; }
 .dot-error       { background: #ff3b30; }
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
+}
 
 footer {
   margin-top: 8px;
   text-align: center;
   color: var(--muted);
 }
+
+/* ── Developer log toggle row ── */
+.dev-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--surface);
+  border-radius: 8px;
+  margin-bottom: 0;
+}
+.dev-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.dev-row-label { font-size: 12px; font-weight: 500; }
+.dev-row-sub   { font-size: 11px; color: var(--muted); }
+
+/* ── Developer log panel ── */
+.dev-panel {
+  background: #0d0d0f;
+  border-radius: 8px;
+  overflow: hidden;
+  margin-top: 8px;
+  border: 1px solid var(--border);
+}
+.dev-log-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  background: #1a1a1c;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--border);
+}
+.dev-log-header button {
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  cursor: pointer;
+}
+.dev-log-header button:hover { border-color: var(--accent); color: var(--accent); }
+.dev-log {
+  font-family: "SF Mono", "Menlo", "Consolas", monospace;
+  font-size: 10.5px;
+  line-height: 1.5;
+  padding: 8px 10px;
+  max-height: 220px;
+  overflow-y: auto;
+  color: #c0c0c0;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.dev-log:empty::before {
+  content: "Waiting for scan…";
+  color: #555;
+}
+/* Log entry colours */
+.dev-entry-scan    { color: #88c0d0; }
+.dev-entry-ok      { color: #a3be8c; }
+.dev-entry-skip    { color: #bf616a; }
+.dev-entry-ocr     { color: #ebcb8b; }
+.dev-entry-xlat    { color: #b48ead; }
+.dev-entry-err     { color: #ff5555; }
