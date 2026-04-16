@@ -77,20 +77,34 @@ function eligibleImages() {
 }
 
 async function imageToCanvas(img) {
-  // Use createImageBitmap where possible - respects CORS rules the same way,
-  // but is more efficient than drawImage for large images.
   const canvas = document.createElement("canvas");
   canvas.width = img.naturalWidth;
   canvas.height = img.naturalHeight;
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
+
+  // Fast path: same-origin or already CORS-allowed image.
   try {
     ctx.drawImage(img, 0, 0);
-    // Touch the pixels to surface any CORS failure synchronously.
-    ctx.getImageData(0, 0, 1, 1);
+    ctx.getImageData(0, 0, 1, 1); // throws if canvas is tainted by cross-origin pixels
     return canvas;
-  } catch (e) {
-    // Cross-origin image that taints the canvas. We cannot read pixels and
-    // we must stay offline, so we skip this image rather than re-fetching.
+  } catch (_) {}
+
+  // Slow path: image is cross-origin (common on manga reading sites where
+  // images are served from a CDN subdomain). Re-fetch the image as a Blob —
+  // extension content scripts can make cross-origin requests when
+  // host_permissions includes <all_urls>. Creating an ImageBitmap from a
+  // Blob does NOT taint the canvas, so getImageData() works normally.
+  try {
+    const resp = await fetch(img.src, { credentials: "omit" });
+    if (!resp.ok) return null;
+    const blob = await resp.blob();
+    const bitmap = await createImageBitmap(blob);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(bitmap, 0, 0);
+    bitmap.close?.();
+    return canvas;
+  } catch (err) {
+    console.warn("[LT] Cannot access image pixels:", img.src, err);
     return null;
   }
 }

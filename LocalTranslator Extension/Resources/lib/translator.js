@@ -21,11 +21,12 @@
 
 import { setModelStatus, CDN } from "./model-manager.js";
 
-// One pipeline instance per language pair, cached for the service worker's
-// lifetime. When the service worker restarts (killed after idle timeout),
-// the pipeline is re-created — but model weights come from Cache Storage,
-// so it is fast after the first ever download.
-const pipelines = {};
+// One pipeline promise per language pair, cached for the service worker's
+// lifetime. Storing the Promise (not the resolved value) means concurrent
+// calls share the same loading operation instead of starting parallel loads.
+// When the service worker restarts (killed after idle timeout), the cache is
+// cleared but model weights come from Cache Storage, so reload is fast.
+const pipelinePromises = {};
 
 async function getTransformers() {
   // Dynamic import so missing vendor file produces a clear error at call-time,
@@ -39,49 +40,57 @@ async function getTransformers() {
   }
 }
 
-async function getPipeline(lang) {
+function getPipeline(lang) {
   // Pick model by detected script.
   const modelId =
     lang === "chi_sim" || lang === "chi_tra" ? CDN.modelZh : CDN.modelJa;
 
-  if (pipelines[modelId]) return pipelines[modelId];
+  // Return the cached promise so concurrent callers all await the same load.
+  if (pipelinePromises[modelId]) return pipelinePromises[modelId];
 
-  await setModelStatus("loading", "Loading translation model…");
+  pipelinePromises[modelId] = (async () => {
+    await setModelStatus("loading", "Loading translation model…");
 
-  const { pipeline, env } = await getTransformers();
+    const { pipeline, env } = await getTransformers();
 
-  // Point ONNX Runtime WASM at jsDelivr so it can be fetched+cached on
-  // first use. After that it reads from extension Cache Storage.
-  env.backends.onnx.wasm.wasmPaths = CDN.onnxWasmBase;
-  // Disable threading: SharedArrayBuffer requires cross-origin isolation
-  // headers that Safari/Chrome extensions don't expose.
-  env.backends.onnx.wasm.numThreads = 1;
-  // Allow remote model downloads from Hugging Face (first use only).
-  env.allowRemoteModels = true;
-  // Cache model shards in extension Cache Storage.
-  env.useBrowserCache = true;
+    // Point ONNX Runtime WASM at jsDelivr so it can be fetched+cached on
+    // first use. After that it reads from extension Cache Storage.
+    env.backends.onnx.wasm.wasmPaths = CDN.onnxWasmBase;
+    // Disable threading: SharedArrayBuffer requires cross-origin isolation
+    // headers that Safari/Chrome extensions don't expose.
+    env.backends.onnx.wasm.numThreads = 1;
+    // Allow remote model downloads from Hugging Face (first use only).
+    env.allowRemoteModels = true;
+    // Cache model shards in extension Cache Storage.
+    env.useBrowserCache = true;
 
-  const pipe = await pipeline("translation", modelId, {
-    progress_callback: async (info) => {
-      if (info.status === "initiate") {
-        await setModelStatus("downloading", `Starting download: ${info.file ?? modelId}`);
-      } else if (info.status === "downloading") {
-        const pct =
-          info.total > 0 ? Math.round((info.loaded / info.total) * 100) : null;
-        await setModelStatus(
-          "downloading",
-          `Downloading ${info.file ?? "model"}… ${pct != null ? pct + "%" : ""}`,
-          pct
-        );
-      } else if (info.status === "done") {
-        await setModelStatus("loading", `Loaded: ${info.file ?? "model"}`);
-      }
-    },
+    const pipe = await pipeline("translation", modelId, {
+      progress_callback: async (info) => {
+        if (info.status === "initiate") {
+          await setModelStatus("downloading", `Starting download: ${info.file ?? modelId}`);
+        } else if (info.status === "downloading") {
+          const pct =
+            info.total > 0 ? Math.round((info.loaded / info.total) * 100) : null;
+          await setModelStatus(
+            "downloading",
+            `Downloading ${info.file ?? "model"}… ${pct != null ? pct + "%" : ""}`,
+            pct
+          );
+        } else if (info.status === "done") {
+          await setModelStatus("loading", `Loaded: ${info.file ?? "model"}`);
+        }
+      },
+    });
+
+    await setModelStatus("ready", "Translation model ready");
+    return pipe;
+  })().catch((err) => {
+    // Remove the cached promise so the next call retries from scratch.
+    delete pipelinePromises[modelId];
+    throw err;
   });
 
-  await setModelStatus("ready", "Translation model ready");
-  pipelines[modelId] = pipe;
-  return pipe;
+  return pipelinePromises[modelId];
 }
 
 export async function translate(text, detectedLang) {
