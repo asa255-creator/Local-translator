@@ -81,8 +81,6 @@ api.runtime.onMessage.addListener((msg) => {
     }
   } else if (msg?.type === "STATUS") {
     statusEl.textContent = msg.text;
-  } else if (msg?.type === "DEV_LOG") {
-    appendDevEntry(msg.entry, msg.kind);
   }
 });
 
@@ -130,15 +128,28 @@ async function loadModelStatus() {
 }
 
 api.storage.onChanged.addListener((changes, area) => {
-  if (area === "local" && changes.lt_modelStatus) {
+  if (area !== "local") return;
+  if (changes.lt_modelStatus) {
     applyModelStatus(changes.lt_modelStatus.newValue);
+  }
+  if (changes.lt_devLog) {
+    const entries = changes.lt_devLog.newValue ?? [];
+    if (entries.length < _lastLogLen) {
+      // Log was cleared (new scan started) — reset display.
+      devLogEl.innerHTML = "";
+      _lastLogLen = 0;
+    }
+    renderDevEntries(entries);
   }
 });
 
 // ── Developer log ────────────────────────────────────────────────────────────
+// Entries are written to chrome.storage.local by the content script, then
+// read here via storage.onChanged — no fragile message relay needed.
+
 const devToggle = document.getElementById("dev-toggle");
 const devPanel  = document.getElementById("dev-panel");
-const devLog    = document.getElementById("dev-log");
+const devLogEl  = document.getElementById("dev-log");
 const devClear  = document.getElementById("dev-clear-btn");
 
 const KIND_CLASS = {
@@ -150,29 +161,49 @@ const KIND_CLASS = {
   err  : "dev-entry-err",
 };
 
-function appendDevEntry(text, kind) {
-  if (!devToggle.checked) return; // panel is hidden — discard
-  const line = document.createElement("div");
-  line.textContent = text;
-  if (kind && KIND_CLASS[kind]) line.className = KIND_CLASS[kind];
-  devLog.appendChild(line);
-  devLog.scrollTop = devLog.scrollHeight; // pin to bottom
+let _lastLogLen = 0; // how many entries we've already rendered
+
+function renderDevEntries(entries) {
+  if (!devToggle.checked) return;
+  const newEntries = entries.slice(_lastLogLen);
+  _lastLogLen = entries.length;
+  for (const { entry, kind } of newEntries) {
+    const line = document.createElement("div");
+    line.textContent = entry;
+    if (kind && KIND_CLASS[kind]) line.className = KIND_CLASS[kind];
+    devLogEl.appendChild(line);
+  }
+  if (newEntries.length > 0) devLogEl.scrollTop = devLogEl.scrollHeight;
 }
 
 async function loadDevMode() {
-  const { devMode = false } = await api.storage.local.get("devMode");
+  const { devMode = false, lt_devLog: entries = [] } = await api.storage.local.get([
+    "devMode",
+    "lt_devLog",
+  ]);
   devToggle.checked = devMode;
   devPanel.classList.toggle("hidden", !devMode);
+  // Show entries from any scan that already ran (e.g. popup opened mid-scan).
+  _lastLogLen = 0;
+  renderDevEntries(entries);
 }
 
 devToggle.addEventListener("change", async () => {
   const devMode = devToggle.checked;
   await api.storage.local.set({ devMode });
   devPanel.classList.toggle("hidden", !devMode);
+  if (devMode) {
+    // Render any existing entries that arrived while panel was closed.
+    _lastLogLen = 0;
+    const { lt_devLog: entries = [] } = await api.storage.local.get("lt_devLog");
+    renderDevEntries(entries);
+  }
 });
 
 devClear.addEventListener("click", () => {
-  devLog.innerHTML = "";
+  devLogEl.innerHTML = "";
+  _lastLogLen = 0;
+  api.storage.local.set({ lt_devLog: [] });
 });
 
 // ── Init ─────────────────────────────────────────────────────────────────────

@@ -29,7 +29,12 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["content.js"],
+      "js": [
+        "lib/bubble-detector.js",
+        "lib/ocr.js",
+        "lib/overlay.js",
+        "content.js"
+      ],
       "css": ["overlay.css"],
       "run_at": "document_idle",
       "all_frames": false

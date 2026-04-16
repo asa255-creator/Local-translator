@@ -119,7 +119,7 @@ function pickLang(sourceLang) {
   return "jpn+chi_sim+chi_tra"; // auto: try all three
 }
 
-export async function recognize(sourceCanvas, region, { lang = "auto" } = {}) {
+async function recognize(sourceCanvas, region, { lang = "auto" } = {}) {
   const worker = await getWorker();
   if (!worker) return { text: "", detectedLang: null, confidence: 0 };
 
@@ -138,3 +138,7 @@ function guessScript(text) {
   if (/[\u4e00-\u9fff]/.test(text)) return "chi_sim";           // CJK
   return null;
 }
+
+// Expose for content script use (injected as a plain script, not an ES module).
+window._LT = window._LT || {};
+window._LT.recognize = recognize;
