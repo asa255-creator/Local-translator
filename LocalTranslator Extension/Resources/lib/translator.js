@@ -112,8 +112,7 @@ export async function translate(text, detectedLang) {
 export async function preWarm() {
   try {
     await getPipeline("jpn");
-  } catch {
-    // Non-fatal: pre-warm is best-effort. If vendor file is missing the
-    // user will see the error on first real translation attempt.
+  } catch (err) {
+    await setModelStatus("error", `Model load failed: ${err?.message ?? err}`);
   }
 }
