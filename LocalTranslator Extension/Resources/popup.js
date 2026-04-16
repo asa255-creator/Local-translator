@@ -28,6 +28,22 @@ async function loadState() {
   hintEl.textContent = enabled ? "On" : "Off";
 }
 
+// Inject content scripts into the active tab. Called from user-action handlers
+// so the popup's activeTab permission context is active. The IIFE guards in
+// each script prevent double-execution if the manifest already injected them.
+async function injectContentScripts(tabId) {
+  try {
+    await api.scripting.executeScript({
+      target: { tabId },
+      files: ["lib/bubble-detector.js", "lib/ocr.js", "lib/overlay.js", "content.js"],
+    });
+    await api.scripting.insertCSS({ target: { tabId }, files: ["overlay.css"] });
+  } catch (err) {
+    // Log but don't surface to user — manifest injection may have already worked.
+    console.warn("[LT] popup inject:", err.message);
+  }
+}
+
 async function sendToContent(message) {
   const tab = await getActiveTab();
   if (!tab?.id) return null;
@@ -43,6 +59,8 @@ toggleEl.addEventListener("change", async () => {
   const enabled = toggleEl.checked;
   hintEl.textContent = enabled ? "On" : "Off";
   await api.storage.local.set({ enabled });
+  const tab = await getActiveTab();
+  if (tab?.id) await injectContentScripts(tab.id);
   await sendToContent({ type: "SET_ENABLED", enabled });
   if (enabled) {
     statusEl.textContent = "Scanning page…";
@@ -60,6 +78,8 @@ langEl.addEventListener("change", async () => {
 
 rescanBtn.addEventListener("click", async () => {
   statusEl.textContent = "Rescanning…";
+  const tab = await getActiveTab();
+  if (tab?.id) await injectContentScripts(tab.id);
   await sendToContent({ type: "RESCAN" });
 });
 

@@ -1,15 +1,7 @@
 // lib/overlay.js — renders translated text over the original image bubbles.
-//
-// Strategy:
-//   - Create a positioned <div> sibling to the image that matches the image's
-//     on-screen rect exactly. This avoids modifying the image itself (which
-//     could break sites that swap src / lazy-load) while still looking like
-//     the text was painted onto the picture.
-//   - For each translated region, create a child <div> absolutely positioned
-//     in the overlay and sized to the region. Fill it with a near-white
-//     background (to mask the source text) and place the translated string
-//     centred inside with auto-shrinking font.
-//   - Reposition on resize + scroll using a ResizeObserver.
+
+(function () {
+  if (window._LT && window._LT.renderOverlay) return; // already loaded
 
 const OVERLAY_CLASS = "lt-overlay-root";
 const BUBBLE_CLASS = "lt-overlay-bubble";
@@ -73,6 +65,6 @@ function renderOverlay(imgEl, sourceCanvas, translations) {
   };
 }
 
-// Expose for content script use (injected as a plain script, not an ES module).
-window._LT = window._LT || {};
-window._LT.renderOverlay = renderOverlay;
+  window._LT = window._LT || {};
+  window._LT.renderOverlay = renderOverlay;
+})();

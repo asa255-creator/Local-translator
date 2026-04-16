@@ -1,26 +1,7 @@
 // lib/bubble-detector.js — heuristic speech-bubble detection.
-//
-// No ML model is required for a first pass: speech bubbles in manga/comics
-// are typically connected regions of very light pixels (white/near-white)
-// that contain interior dark pixels (the text) and are bounded on all sides.
-//
-// Algorithm:
-//   1. Downsample the image for speed.
-//   2. Threshold pixels into 'light' (candidate bubble background) and 'dark'
-//      (ink / outline / text).
-//   3. Flood-fill connected light regions using a 4-connected scan.
-//   4. For each region, compute its bounding box and count the dark pixels
-//      within that bounding box. Accept regions whose:
-//        - area is >= ~1% and <= ~60% of the image,
-//        - aspect ratio is in a sensible range,
-//        - dark-pixel density within the bbox is between 2% and 40% (text),
-//        - bbox is not touching multiple image edges (almost certainly the
-//          page background, not a bubble).
-//   5. Map bounding boxes back to the source resolution.
-//
-// This isn't a trained model — it's intentionally simple and runs fully
-// offline in milliseconds. The OCR + translation stages gracefully handle
-// false positives by producing empty text.
+
+(function () {
+  if (window._LT && window._LT.findBubbles) return; // already loaded
 
 const MAX_SIDE = 900; // downsample target for detection
 
@@ -169,6 +150,6 @@ function iou(a, b) {
   return inter / union;
 }
 
-// Expose for content script use (injected as a plain script, not an ES module).
-window._LT = window._LT || {};
-window._LT.findBubbles = findBubbles;
+  window._LT = window._LT || {};
+  window._LT.findBubbles = findBubbles;
+})();
