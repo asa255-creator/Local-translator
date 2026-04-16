@@ -1,19 +1,19 @@
 // content.js — orchestrates image translation on the page.
 //
-// lib/bubble-detector.js, lib/ocr.js, lib/overlay.js are injected BEFORE this
-// file by the manifest content_scripts list, so window._LT.* is available
-// immediately without any dynamic import().
-//
-// Translation is sent to the background service worker which owns the
-// Transformers.js / opus-mt pipeline (cached in extension Cache Storage).
-// Content scripts make zero network requests.
+// Injected programmatically by background.js via scripting.executeScript().
+// lib/bubble-detector.js, lib/ocr.js, lib/overlay.js run first and expose
+// their functions on window._LT so this file can call them directly.
+
+// Double-injection guard: scripting.executeScript runs on every page load,
+// but the manifest may also inject this. Only run once per page.
+if (window._LT_CS) throw new Error("[LT] already loaded");
+window._LT_CS = true;
 
 const api = typeof browser !== "undefined" ? browser : chrome;
 
-// Diagnostic: written at script-load time so the popup dev panel can confirm
-// whether Safari actually injected this content script into the page.
+// Diagnostic: written immediately so the popup can confirm injection happened.
 try {
-  api.storage.local.set({ lt_cs_injected: Date.now(), lt_cs_url: location.href.slice(0, 120) });
+  api.storage.local.set({ lt_cs_injected: Date.now(), lt_cs_url: location.href.slice(0, 120), lt_inject_error: null });
 } catch (_) {}
 
 const STATE = {
