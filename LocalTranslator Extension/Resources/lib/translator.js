@@ -53,16 +53,14 @@ function getPipeline(lang) {
 
     const { pipeline, env } = await getTransformers();
 
-    // Point ONNX Runtime WASM at jsDelivr so it can be fetched+cached on
-    // first use. After that it reads from extension Cache Storage.
-    env.backends.onnx.wasm.wasmPaths = CDN.onnxWasmBase;
-    // Disable threading: SharedArrayBuffer requires cross-origin isolation
-    // headers that Safari/Chrome extensions don't expose.
+    // Use bundled ONNX WASM files (downloaded by setup script into vendor/onnx/).
+    env.backends.onnx.wasm.wasmPaths = self.chrome.runtime.getURL("vendor/onnx/");
     env.backends.onnx.wasm.numThreads = 1;
-    // Allow remote model downloads from Hugging Face (first use only).
-    env.allowRemoteModels = true;
-    // Cache model shards in extension Cache Storage.
-    env.useBrowserCache = true;
+    // Use locally-bundled model weights (downloaded by setup script into vendor/models/).
+    // This makes the extension 100% offline with no runtime network requests.
+    env.localModelPath = self.chrome.runtime.getURL("vendor/models/");
+    env.allowRemoteModels = false;
+    env.useBrowserCache = false;
 
     const pipe = await pipeline("translation", modelId, {
       progress_callback: async (info) => {
