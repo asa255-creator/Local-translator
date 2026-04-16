@@ -14,4 +14,3 @@ LocalTranslator Extension/Resources/vendor/tesseract/*.js
 LocalTranslator Extension/Resources/vendor/tesseract/*.wasm
 LocalTranslator Extension/Resources/vendor/traineddata/*.traineddata
 LocalTranslator Extension/Resources/vendor/transformers.min.js
-LocalTranslator Extension/Resources/icons/*.png

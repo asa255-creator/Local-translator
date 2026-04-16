@@ -73,6 +73,25 @@
       <small>OCR is fully offline. Translation model downloads once (~150 MB), then offline.</small>
     </footer>
 
+    <section class="dev-row">
+      <div class="dev-row-text">
+        <span class="dev-row-label">Developer log</span>
+        <span class="dev-row-sub">Detailed scan output</span>
+      </div>
+      <label class="switch switch-sm">
+        <input type="checkbox" id="dev-toggle" />
+        <span class="slider"></span>
+      </label>
+    </section>
+
+    <section id="dev-panel" class="dev-panel hidden">
+      <div class="dev-log-header">
+        <span>Activity Log</span>
+        <button id="dev-clear-btn" type="button">Clear</button>
+      </div>
+      <div id="dev-log" class="dev-log"></div>
+    </section>
+
     <script src="popup.js"></script>
   </body>
 </html>

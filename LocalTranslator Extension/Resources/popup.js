@@ -1,19 +1,17 @@
 // popup.js — UI controller for the Local Translator extension popup.
 // Communicates with the background service worker and the active tab's
 // content script. All messages stay local; no network calls are made.
-// Model download status is read from chrome.storage.local (written by
-// background/translator.js) and reflected live via storage.onChanged.
 
 const api = typeof browser !== "undefined" ? browser : chrome;
 
-const toggleEl = document.getElementById("enabled-toggle");
-const hintEl = document.getElementById("toggle-hint");
-const langEl = document.getElementById("source-lang");
-const rescanBtn = document.getElementById("rescan-btn");
-const clearBtn = document.getElementById("clear-btn");
-const statusEl = document.getElementById("status-text");
+const toggleEl     = document.getElementById("enabled-toggle");
+const hintEl       = document.getElementById("toggle-hint");
+const langEl       = document.getElementById("source-lang");
+const rescanBtn    = document.getElementById("rescan-btn");
+const clearBtn     = document.getElementById("clear-btn");
+const statusEl     = document.getElementById("status-text");
 const progressWrap = document.getElementById("progress");
-const progressBar = document.getElementById("progress-bar");
+const progressBar  = document.getElementById("progress-bar");
 
 async function getActiveTab() {
   const [tab] = await api.tabs.query({ active: true, currentWindow: true });
@@ -36,7 +34,6 @@ async function sendToContent(message) {
   try {
     return await api.tabs.sendMessage(tab.id, message);
   } catch (err) {
-    // Content script may not be injected yet (e.g. chrome:// pages).
     console.warn("sendToContent failed:", err);
     return null;
   }
@@ -71,7 +68,7 @@ clearBtn.addEventListener("click", async () => {
   statusEl.textContent = "Overlays removed.";
 });
 
-// ── Page-processing progress (from content script via background relay) ──────
+// ── Message listener (progress, status, dev log) ─────────────────────────────
 api.runtime.onMessage.addListener((msg) => {
   if (msg?.type === "PROGRESS") {
     const { current, total, label } = msg;
@@ -88,10 +85,10 @@ api.runtime.onMessage.addListener((msg) => {
 });
 
 // ── Model download / status display ─────────────────────────────────────────
-const mtDot    = document.getElementById("mt-dot");
-const mtStatus = document.getElementById("mt-status");
+const mtDot     = document.getElementById("mt-dot");
+const mtStatus  = document.getElementById("mt-status");
 const mtBarWrap = document.getElementById("mt-bar-wrap");
-const mtBar    = document.getElementById("mt-bar");
+const mtBar     = document.getElementById("mt-bar");
 
 const PHASE_DOT = {
   idle        : "",
@@ -101,22 +98,27 @@ const PHASE_DOT = {
   error       : "dot-error",
 };
 const PHASE_LABEL = {
-  idle        : "Not yet downloaded",
-  ready       : "Ready · offline",
+  idle  : "Not yet downloaded",
+  ready : "Ready · offline",
 };
 
 function applyModelStatus(s) {
   if (!s) return;
-  // Update indicator dot
   mtDot.className = "dot " + (PHASE_DOT[s.phase] ?? "");
-  // Update label
   mtStatus.textContent = PHASE_LABEL[s.phase] ?? s.label ?? s.phase;
-  // Show/hide progress bar
+
   if (s.phase === "downloading" && s.pct != null) {
-    mtBarWrap.classList.remove("hidden");
+    // Determinate: show exact percentage.
+    mtBarWrap.classList.remove("hidden", "indeterminate");
     mtBar.style.width = s.pct + "%";
+  } else if (s.phase === "downloading" || s.phase === "loading") {
+    // Indeterminate: model is active but no percentage available yet.
+    mtBarWrap.classList.remove("hidden");
+    mtBarWrap.classList.add("indeterminate");
+    mtBar.style.width = "35%";
   } else {
     mtBarWrap.classList.add("hidden");
+    mtBarWrap.classList.remove("indeterminate");
   }
 }
 
@@ -125,12 +127,86 @@ async function loadModelStatus() {
   applyModelStatus(s);
 }
 
-// Live updates while popup is open (e.g. during initial model download).
 api.storage.onChanged.addListener((changes, area) => {
-  if (area === "local" && changes.lt_modelStatus) {
+  if (area !== "local") return;
+  if (changes.lt_modelStatus) {
     applyModelStatus(changes.lt_modelStatus.newValue);
+  }
+  if (changes.lt_devLog) {
+    const entries = changes.lt_devLog.newValue ?? [];
+    if (entries.length < _lastLogLen) {
+      // Log was cleared (new scan started) — reset display.
+      devLogEl.innerHTML = "";
+      _lastLogLen = 0;
+    }
+    renderDevEntries(entries);
   }
 });
 
+// ── Developer log ────────────────────────────────────────────────────────────
+// Entries are written to chrome.storage.local by the content script, then
+// read here via storage.onChanged — no fragile message relay needed.
+
+const devToggle = document.getElementById("dev-toggle");
+const devPanel  = document.getElementById("dev-panel");
+const devLogEl  = document.getElementById("dev-log");
+const devClear  = document.getElementById("dev-clear-btn");
+
+const KIND_CLASS = {
+  scan : "dev-entry-scan",
+  ok   : "dev-entry-ok",
+  skip : "dev-entry-skip",
+  ocr  : "dev-entry-ocr",
+  xlat : "dev-entry-xlat",
+  err  : "dev-entry-err",
+};
+
+let _lastLogLen = 0; // how many entries we've already rendered
+
+function renderDevEntries(entries) {
+  if (!devToggle.checked) return;
+  const newEntries = entries.slice(_lastLogLen);
+  _lastLogLen = entries.length;
+  for (const { entry, kind } of newEntries) {
+    const line = document.createElement("div");
+    line.textContent = entry;
+    if (kind && KIND_CLASS[kind]) line.className = KIND_CLASS[kind];
+    devLogEl.appendChild(line);
+  }
+  if (newEntries.length > 0) devLogEl.scrollTop = devLogEl.scrollHeight;
+}
+
+async function loadDevMode() {
+  const { devMode = false, lt_devLog: entries = [] } = await api.storage.local.get([
+    "devMode",
+    "lt_devLog",
+  ]);
+  devToggle.checked = devMode;
+  devPanel.classList.toggle("hidden", !devMode);
+  // Show entries from any scan that already ran (e.g. popup opened mid-scan).
+  _lastLogLen = 0;
+  renderDevEntries(entries);
+}
+
+devToggle.addEventListener("change", async () => {
+  const devMode = devToggle.checked;
+  await api.storage.local.set({ devMode });
+  devPanel.classList.toggle("hidden", !devMode);
+  if (devMode) {
+    // Render any existing entries that arrived while panel was closed.
+    _lastLogLen = 0;
+    const { lt_devLog: entries = [] } = await api.storage.local.get("lt_devLog");
+    renderDevEntries(entries);
+  }
+});
+
+devClear.addEventListener("click", () => {
+  devLogEl.innerHTML = "";
+  _lastLogLen = 0;
+  api.storage.local.set({ lt_devLog: [] });
+});
+
+// ── Init ─────────────────────────────────────────────────────────────────────
 loadState();
 loadModelStatus();
+loadDevMode();

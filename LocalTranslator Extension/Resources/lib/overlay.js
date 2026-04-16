@@ -14,7 +14,7 @@
 const OVERLAY_CLASS = "lt-overlay-root";
 const BUBBLE_CLASS = "lt-overlay-bubble";
 
-export function renderOverlay(imgEl, sourceCanvas, translations) {
+function renderOverlay(imgEl, sourceCanvas, translations) {
   // Root element tracks the image's layout rectangle.
   const root = document.createElement("div");
   root.className = OVERLAY_CLASS;
@@ -72,3 +72,7 @@ export function renderOverlay(imgEl, sourceCanvas, translations) {
     },
   };
 }
+
+// Expose for content script use (injected as a plain script, not an ES module).
+window._LT = window._LT || {};
+window._LT.renderOverlay = renderOverlay;

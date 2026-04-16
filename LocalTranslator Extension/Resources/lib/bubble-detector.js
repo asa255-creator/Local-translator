@@ -117,7 +117,7 @@ function edgeTouches(comp, w, h) {
   return touches;
 }
 
-export async function findBubbles(sourceCanvas) {
+async function findBubbles(sourceCanvas) {
   const { canvas: small, scale } = downsample(sourceCanvas);
   const { light, dark, w, h } = buildMasks(small);
   const comps = floodComponents(light, w, h);
@@ -168,3 +168,7 @@ function iou(a, b) {
   const union = a.w * a.h + b.w * b.h - inter;
   return inter / union;
 }
+
+// Expose for content script use (injected as a plain script, not an ES module).
+window._LT = window._LT || {};
+window._LT.findBubbles = findBubbles;
