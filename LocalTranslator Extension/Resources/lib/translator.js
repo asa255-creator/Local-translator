@@ -29,14 +29,25 @@ import { setModelStatus, CDN } from "./model-manager.js";
 const pipelinePromises = {};
 
 async function getTransformers() {
-  // Dynamic import so missing vendor file produces a clear error at call-time,
-  // not at module load time (which would break background.js startup entirely).
+  // Resolve the URL explicitly so diagnostics can show the exact path tried.
+  const url = self.chrome.runtime.getURL("vendor/transformers.min.js");
   try {
-    return await import("../vendor/transformers.min.js");
+    // Verify the file is fetchable before attempting import().
+    const probe = await fetch(url);
+    if (!probe.ok) {
+      throw new Error(`HTTP ${probe.status}`);
+    }
+  } catch (probeErr) {
+    const msg = `vendor/transformers.min.js not accessible at ${url} — ${probeErr.message}`;
+    await self.chrome.storage.local.set({ lt_vendor_diag: msg });
+    throw new Error(`[LT] ${msg}`);
+  }
+  try {
+    return await import(url);
   } catch (err) {
-    throw new Error(
-      "[LT] vendor/transformers.min.js not found. Run scripts/download-vendors.sh first."
-    );
+    const msg = `import() failed for ${url} — ${err.message}`;
+    await self.chrome.storage.local.set({ lt_vendor_diag: msg });
+    throw new Error(`[LT] ${msg}`);
   }
 }
 

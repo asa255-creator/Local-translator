@@ -86,6 +86,11 @@
 
     <section id="dev-panel" class="dev-panel hidden">
       <div id="dev-cs-status" class="dev-cs-status">Content script: checking…</div>
+      <div id="dev-vendor-diag" class="dev-vendor-diag hidden"></div>
+      <div class="dev-actions">
+        <button id="dev-reload-btn" type="button" title="Reload extension service worker (like disabling and re-enabling the extension)">Force Reload Extension</button>
+        <button id="dev-restart-btn" type="button" title="Toggle translation off then on again and rescan">Restart &amp; Rescan</button>
+      </div>
       <div class="dev-log-header">
         <span>Activity Log</span>
         <button id="dev-clear-btn" type="button">Clear</button>

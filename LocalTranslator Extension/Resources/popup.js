@@ -159,6 +159,9 @@ api.storage.onChanged.addListener((changes, area) => {
       changes.lt_inject_error?.newValue
     );
   }
+  if (changes.lt_vendor_diag) {
+    renderVendorDiag(changes.lt_vendor_diag.newValue);
+  }
   if (changes.lt_devLog) {
     const entries = changes.lt_devLog.newValue ?? [];
     if (entries.length < _lastLogLen) {
@@ -203,7 +206,21 @@ function renderDevEntries(entries) {
   if (newEntries.length > 0) devLogEl.scrollTop = devLogEl.scrollHeight;
 }
 
-const devCsStatusEl = document.getElementById("dev-cs-status");
+const devCsStatusEl    = document.getElementById("dev-cs-status");
+const devVendorDiagEl  = document.getElementById("dev-vendor-diag");
+const devReloadBtn     = document.getElementById("dev-reload-btn");
+const devRestartBtn    = document.getElementById("dev-restart-btn");
+
+function renderVendorDiag(msg) {
+  if (!devVendorDiagEl) return;
+  if (msg) {
+    devVendorDiagEl.textContent = `Vendor diag: ${msg}`;
+    devVendorDiagEl.classList.remove("hidden");
+    devVendorDiagEl.style.color = "#f87171";
+  } else {
+    devVendorDiagEl.classList.add("hidden");
+  }
+}
 
 function renderCsStatus(injectedAt, url, injectErr) {
   if (!devCsStatusEl) return;
@@ -221,16 +238,25 @@ function renderCsStatus(injectedAt, url, injectErr) {
 }
 
 async function loadDevMode() {
-  const { devMode = false, lt_devLog: entries = [], lt_cs_injected: injectedAt, lt_cs_url: csUrl, lt_inject_error: injectErr } = await api.storage.local.get([
+  const {
+    devMode = false,
+    lt_devLog: entries = [],
+    lt_cs_injected: injectedAt,
+    lt_cs_url: csUrl,
+    lt_inject_error: injectErr,
+    lt_vendor_diag: vendorDiag,
+  } = await api.storage.local.get([
     "devMode",
     "lt_devLog",
     "lt_cs_injected",
     "lt_cs_url",
     "lt_inject_error",
+    "lt_vendor_diag",
   ]);
   devToggle.checked = devMode;
   devPanel.classList.toggle("hidden", !devMode);
   renderCsStatus(injectedAt, csUrl, injectErr);
+  renderVendorDiag(vendorDiag);
   // Show entries from any scan that already ran (e.g. popup opened mid-scan).
   _lastLogLen = 0;
   renderDevEntries(entries);
@@ -252,6 +278,42 @@ devClear.addEventListener("click", () => {
   devLogEl.innerHTML = "";
   _lastLogLen = 0;
   api.storage.local.set({ lt_devLog: [] });
+});
+
+// ── Dev buttons ──────────────────────────────────────────────────────────────
+
+// Reloads the extension service worker — equivalent to disabling and
+// re-enabling the extension in Safari's preferences. Useful when the
+// background worker is stuck or vendor files were just updated.
+devReloadBtn?.addEventListener("click", () => {
+  api.runtime.reload();
+  // Popup closes automatically after reload; nothing else to do here.
+});
+
+// Soft-restart: toggle translation off then on in the active tab, then rescan.
+// Useful for forcing content-script re-initialization without a full reload.
+devRestartBtn?.addEventListener("click", async () => {
+  statusEl.textContent = "Restarting…";
+  const tab = await getActiveTab();
+
+  // Turn off
+  await api.storage.local.set({ enabled: false });
+  if (tab?.id) {
+    try { await api.tabs.sendMessage(tab.id, { type: "SET_ENABLED", enabled: false }); } catch (_) {}
+  }
+
+  await new Promise((r) => setTimeout(r, 300));
+
+  // Turn on
+  await api.storage.local.set({ enabled: true });
+  toggleEl.checked = true;
+  hintEl.textContent = "On";
+  if (tab?.id) {
+    await injectContentScripts(tab.id);
+    try { await api.tabs.sendMessage(tab.id, { type: "SET_ENABLED", enabled: true }); } catch (_) {}
+    try { await api.tabs.sendMessage(tab.id, { type: "RESCAN" }); } catch (_) {}
+  }
+  statusEl.textContent = "Restarted. Scanning…";
 });
 
 // ── Init ─────────────────────────────────────────────────────────────────────
