@@ -162,6 +162,9 @@ api.storage.onChanged.addListener((changes, area) => {
   if (changes.lt_vendor_diag) {
     renderVendorDiag(changes.lt_vendor_diag.newValue);
   }
+  if (changes.lt_sw_started) {
+    renderSwStatus(changes.lt_sw_started.newValue);
+  }
   if (changes.lt_devLog) {
     const entries = changes.lt_devLog.newValue ?? [];
     if (entries.length < _lastLogLen) {
@@ -237,6 +240,19 @@ function renderCsStatus(injectedAt, url, injectErr) {
   }
 }
 
+function renderSwStatus(swStartedAt) {
+  const el = document.getElementById("dev-sw-status");
+  if (!el) return;
+  if (swStartedAt) {
+    const ago = Math.round((Date.now() - swStartedAt) / 1000);
+    el.textContent = `Service worker: running (started ${ago}s ago)`;
+    el.style.color = "#4ade80";
+  } else {
+    el.textContent = "Service worker: NOT running — static import of transformers.min.js may have failed";
+    el.style.color = "#f87171";
+  }
+}
+
 async function loadDevMode() {
   const {
     devMode = false,
@@ -245,6 +261,7 @@ async function loadDevMode() {
     lt_cs_url: csUrl,
     lt_inject_error: injectErr,
     lt_vendor_diag: vendorDiag,
+    lt_sw_started: swStartedAt,
   } = await api.storage.local.get([
     "devMode",
     "lt_devLog",
@@ -252,11 +269,13 @@ async function loadDevMode() {
     "lt_cs_url",
     "lt_inject_error",
     "lt_vendor_diag",
+    "lt_sw_started",
   ]);
   devToggle.checked = devMode;
   devPanel.classList.toggle("hidden", !devMode);
   renderCsStatus(injectedAt, csUrl, injectErr);
   renderVendorDiag(vendorDiag);
+  renderSwStatus(swStartedAt);
   // Show entries from any scan that already ran (e.g. popup opened mid-scan).
   _lastLogLen = 0;
   renderDevEntries(entries);
@@ -282,12 +301,20 @@ devClear.addEventListener("click", () => {
 
 // ── Dev buttons ──────────────────────────────────────────────────────────────
 
-// Reloads the extension service worker — equivalent to disabling and
-// re-enabling the extension in Safari's preferences. Useful when the
-// background worker is stuck or vendor files were just updated.
-devReloadBtn?.addEventListener("click", () => {
-  api.runtime.reload();
-  // Popup closes automatically after reload; nothing else to do here.
+// Tells the background service worker to clear its pipeline cache and
+// re-run preWarm(). This is the Safari-compatible alternative to
+// runtime.reload() (which is not supported in Safari).
+devReloadBtn?.addEventListener("click", async () => {
+  const btn = devReloadBtn;
+  btn.textContent = "Retrying…";
+  btn.disabled = true;
+  try {
+    await api.runtime.sendMessage({ type: "RELOAD_PIPELINE" });
+    statusEl.textContent = "Pipeline reload triggered.";
+  } catch (err) {
+    statusEl.textContent = `Reload failed: ${err.message}`;
+  }
+  setTimeout(() => { btn.textContent = "Retry Pipeline Load"; btn.disabled = false; }, 2000);
 });
 
 // Soft-restart: toggle translation off then on in the active tab, then rescan.
