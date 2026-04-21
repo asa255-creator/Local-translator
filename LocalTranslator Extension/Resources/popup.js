@@ -111,40 +111,44 @@ const mtBarWrap = document.getElementById("mt-bar-wrap");
 const mtBar     = document.getElementById("mt-bar");
 
 const PHASE_DOT = {
-  idle        : "",
-  downloading : "dot-downloading",
-  loading     : "dot-loading",
-  ready       : "dot-ok",
-  error       : "dot-error",
-};
-const PHASE_LABEL = {
-  idle  : "Not yet downloaded",
-  ready : "Ready · offline",
+  idle    : "",
+  loading : "dot-loading",
+  ready   : "dot-ok",
+  error   : "dot-error",
 };
 
 function applyModelStatus(s) {
   if (!s) return;
   mtDot.className = "dot " + (PHASE_DOT[s.phase] ?? "");
-  mtStatus.textContent = PHASE_LABEL[s.phase] ?? s.label ?? s.phase;
+  mtStatus.textContent = s.label ?? s.phase;
+  mtBarWrap.classList.add("hidden");
+}
 
-  if (s.phase === "downloading" && s.pct != null) {
-    // Determinate: show exact percentage.
-    mtBarWrap.classList.remove("hidden", "indeterminate");
-    mtBar.style.width = s.pct + "%";
-  } else if (s.phase === "downloading" || s.phase === "loading") {
-    // Indeterminate: model is active but no percentage available yet.
-    mtBarWrap.classList.remove("hidden");
-    mtBarWrap.classList.add("indeterminate");
-    mtBar.style.width = "35%";
-  } else {
-    mtBarWrap.classList.add("hidden");
-    mtBarWrap.classList.remove("indeterminate");
+// Ping the server directly from the popup for a live status check.
+async function checkServerNow() {
+  try {
+    const resp = await fetch("http://127.0.0.1:7070/status", {
+      signal: AbortSignal.timeout(2000),
+    });
+    const { models = [] } = await resp.json();
+    const warm = models.some((m) => m.includes("ja"));
+    applyModelStatus({
+      phase: "ready",
+      label: warm ? "Server ready · model warm" : "Server running · model loading…",
+    });
+  } catch {
+    applyModelStatus({
+      phase: "error",
+      label: "Server offline — run: ./scripts/start-server.sh",
+    });
   }
 }
 
 async function loadModelStatus() {
+  // Show stored status immediately, then refresh with a live ping.
   const { lt_modelStatus: s } = await api.storage.local.get("lt_modelStatus");
-  applyModelStatus(s);
+  if (s) applyModelStatus(s);
+  checkServerNow();
 }
 
 api.storage.onChanged.addListener((changes, area) => {

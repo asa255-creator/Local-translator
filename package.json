@@ -1,0 +1,12 @@
+{
+  "name": "local-translator-server",
+  "version": "1.0.0",
+  "description": "Local translation server for the Local Translator Safari extension",
+  "type": "module",
+  "scripts": {
+    "start": "node scripts/translation-server.mjs"
+  },
+  "dependencies": {
+    "@xenova/transformers": "^2.17.2"
+  }
+}

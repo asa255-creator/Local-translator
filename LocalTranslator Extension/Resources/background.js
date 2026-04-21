@@ -1,6 +1,9 @@
 // background.js — service worker for Local Translator.
+//
+// Translation runs in a local Node.js server (scripts/start-server.sh).
+// This worker just routes messages between the content script and that server.
 
-import { translate, preWarm } from "./lib/translator.js";
+import { translate, preWarm, checkServer } from "./lib/translator.js";
 
 const api = self.chrome ?? self.browser;
 
@@ -9,8 +12,7 @@ const DEFAULTS = {
   sourceLang: "auto",
 };
 
-// Write immediately at module-load time so the popup can confirm the SW
-// actually started (static import of transformers.min.js succeeded).
+// Confirm SW started — popup reads this to verify the service worker is live.
 api.storage.local.set({ lt_sw_started: Date.now() }).catch(() => {});
 
 // ── Install / startup ────────────────────────────────────────────────────────
@@ -18,8 +20,6 @@ api.storage.local.set({ lt_sw_started: Date.now() }).catch(() => {});
 api.runtime.onInstalled.addListener(async () => {
   const existing = await api.storage.local.get(Object.keys(DEFAULTS));
   await api.storage.local.set({ ...DEFAULTS, ...existing });
-  // Clear stale diagnostic keys and model status so the popup never shows
-  // an error left over from a previous extension version.
   await api.storage.local.remove([
     "lt_inject_error", "lt_cs_injected", "lt_cs_url",
     "lt_modelStatus", "lt_vendor_diag",
@@ -31,10 +31,7 @@ api.runtime.onInstalled.addListener(async () => {
 
 api.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
   if (changeInfo.status !== "complete") return;
-  const { enabled, sourceLang } = await api.storage.local.get([
-    "enabled",
-    "sourceLang",
-  ]);
+  const { enabled, sourceLang } = await api.storage.local.get(["enabled", "sourceLang"]);
   if (!enabled) return;
   try {
     await api.tabs.sendMessage(tabId, { type: "SET_ENABLED", enabled: true, sourceLang });
@@ -58,10 +55,9 @@ api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     api.runtime.sendMessage(msg).catch(() => {});
   }
 
-  // Popup "Retry Pipeline Load" button — re-runs preWarm without a full reload.
+  // Popup "Retry" button — re-checks server and updates status.
   if (msg?.type === "RELOAD_PIPELINE") {
-    api.storage.local.remove("lt_modelStatus").then(() => preWarm());
-    sendResponse({ ok: true });
+    preWarm().then(() => sendResponse({ ok: true }));
     return true;
   }
 });
