@@ -23,6 +23,9 @@ import { setModelStatus, CDN } from "./model-manager.js";
 
 // Configure ONNX runtime and model paths at module init time.
 // These must be set before the first pipeline() call.
+// proxy: false prevents ORT-Web from spawning a proxy worker, which hangs
+// in Safari extension service workers.
+env.backends.onnx.wasm.proxy = false;
 env.backends.onnx.wasm.wasmPaths = self.chrome.runtime.getURL("vendor/onnx/");
 env.backends.onnx.wasm.numThreads = 1;
 env.localModelPath = self.chrome.runtime.getURL("vendor/models/");
@@ -43,7 +46,16 @@ function getPipeline(lang) {
   pipelinePromises[modelId] = (async () => {
     await setModelStatus("loading", "Loading translation model…");
 
-    const pipe = await pipeline("translation", modelId, {
+    // 90-second timeout: if ONNX runtime hangs during initialization
+    // (e.g. proxy-worker deadlock in Safari SW), surface an error instead
+    // of spinning forever.
+    let timeoutId;
+    const timeoutPromise = new Promise((_, reject) => {
+      timeoutId = setTimeout(() => reject(new Error("Model load timed out after 90s — ONNX runtime may be incompatible with this Safari version")), 90_000);
+    });
+
+    const pipe = await Promise.race([
+      pipeline("translation", modelId, {
       progress_callback: async (info) => {
         if (info.status === "initiate") {
           await setModelStatus("downloading", `Starting download: ${info.file ?? modelId}`);
@@ -59,7 +71,10 @@ function getPipeline(lang) {
           await setModelStatus("loading", `Loaded: ${info.file ?? "model"}`);
         }
       },
-    });
+    }),
+      timeoutPromise,
+    ]);
+    clearTimeout(timeoutId);
 
     await setModelStatus("ready", "Translation model ready");
     return pipe;
