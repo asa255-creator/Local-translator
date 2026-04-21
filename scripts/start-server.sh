@@ -13,6 +13,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
+MODELS_DIR="$ROOT/LocalTranslator Extension/Resources/vendor/models"
+HF="https://huggingface.co"
+
 # Install @xenova/transformers if not already present.
 if [[ ! -d "$ROOT/node_modules/@xenova" ]]; then
   echo ""
@@ -20,5 +23,18 @@ if [[ ! -d "$ROOT/node_modules/@xenova" ]]; then
   npm install
   echo ""
 fi
+
+# Download tokenizer.json for each model if missing.
+# Transformers.js v2 requires this file; it was not included in the
+# original download-vendors.sh so existing installs need it fetched once.
+for model in "Xenova/opus-mt-ja-en" "Xenova/opus-mt-zh-en"; do
+  tok="$MODELS_DIR/$model/tokenizer.json"
+  if [[ ! -f "$tok" ]]; then
+    echo "Downloading missing tokenizer.json for $model…"
+    mkdir -p "$(dirname "$tok")"
+    curl -fsSL "$HF/$model/resolve/main/tokenizer.json" -o "$tok"
+    echo "  ✓ $tok"
+  fi
+done
 
 exec node "$ROOT/scripts/translation-server.mjs"

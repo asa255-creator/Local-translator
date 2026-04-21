@@ -53,15 +53,26 @@ function progressCallback(modelId) {
   };
 }
 
-async function getPipe(modelId) {
+function getPipe(modelId) {
+  // Cache the Promise itself so concurrent callers await the same load
+  // instead of starting multiple parallel pipeline instances.
   if (pipes[modelId]) return pipes[modelId];
+
   const label = modelId === MODEL_ZH ? 'Chinese→English' : 'Japanese→English';
   const t0 = Date.now();
   console.log(`\nLoading ${label} model…`);
-  pipes[modelId] = await pipeline('translation', modelId, {
+
+  pipes[modelId] = pipeline('translation', modelId, {
+    quantized: false,              // use encoder_model.onnx, not _quantized.onnx
     progress_callback: progressCallback(modelId),
+  }).then((pipe) => {
+    console.log(`✓ ${label} ready (${((Date.now() - t0) / 1000).toFixed(1)} s)\n`);
+    return pipe;
+  }).catch((err) => {
+    delete pipes[modelId];         // allow retry on next request
+    throw err;
   });
-  console.log(`✓ ${label} ready (${((Date.now() - t0) / 1000).toFixed(1)} s)\n`);
+
   return pipes[modelId];
 }
 

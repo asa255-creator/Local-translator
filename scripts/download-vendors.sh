@@ -79,7 +79,7 @@ download_model() {
 
   echo "  $label"
   # Small config/tokenizer files
-  for f in config.json generation_config.json tokenizer_config.json vocab.json source.spm target.spm; do
+  for f in config.json generation_config.json tokenizer_config.json tokenizer.json vocab.json source.spm target.spm; do
     curl -fsSL "$base/$f" -o "$dir/$f" 2>/dev/null || true
   done
   # ONNX weights — these are the large files
