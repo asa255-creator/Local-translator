@@ -3,75 +3,45 @@
 // THIS MODULE RUNS IN THE BACKGROUND SERVICE WORKER (background.js imports it).
 // It does NOT run in content scripts.
 //
-// Why the service worker? Chrome/Safari put extension service workers in a
-// separate origin context where caches.open() uses the extension's own
-// Cache Storage — shared across every tab. That means the ~150 MB of opus-mt
-// model weights are downloaded exactly once, then served offline forever.
+// Safari's service worker BLOCKS dynamic import() entirely — "Dynamic-import is
+// not available in Worklets or ServiceWorkers". We must use a static import
+// instead. The path below is resolved at parse time (relative to this file's
+// URL: lib/translator.js → ../vendor/transformers.min.js).
+//
+// If vendor/transformers.min.js is missing, the service worker will fail to
+// start completely. Run scripts/download-vendors.sh first.
 //
 // Models used (Apache-2.0 / CC-BY-4.0):
-//   Helsinki-NLP/opus-mt-ja-en   (~75 MB, Japanese → English)
-//   Helsinki-NLP/opus-mt-zh-en   (~75 MB, Chinese → English)
+//   Xenova/opus-mt-ja-en   (~75 MB, Japanese → English)
+//   Xenova/opus-mt-zh-en   (~75 MB, Chinese → English)
 //
-// First call: triggers ONNX WASM download from jsDelivr (~20 MB) and model
-// weight download from Hugging Face (~75 MB per language pair).
-// Every subsequent call: fully offline, reads from extension Cache Storage.
-//
-// Vendor requirement: vendor/transformers.min.js must be present.
-// Run scripts/download-vendors.sh to fetch it.
+// Models are bundled into vendor/models/ by download-vendors.sh so no
+// network requests are needed at runtime.
 
+import { pipeline, env } from "../vendor/transformers.min.js";
 import { setModelStatus, CDN } from "./model-manager.js";
+
+// Configure ONNX runtime and model paths at module init time.
+// These must be set before the first pipeline() call.
+env.backends.onnx.wasm.wasmPaths = self.chrome.runtime.getURL("vendor/onnx/");
+env.backends.onnx.wasm.numThreads = 1;
+env.localModelPath = self.chrome.runtime.getURL("vendor/models/");
+env.allowRemoteModels = false;
+env.useBrowserCache = false;
 
 // One pipeline promise per language pair, cached for the service worker's
 // lifetime. Storing the Promise (not the resolved value) means concurrent
 // calls share the same loading operation instead of starting parallel loads.
-// When the service worker restarts (killed after idle timeout), the cache is
-// cleared but model weights come from Cache Storage, so reload is fast.
 const pipelinePromises = {};
 
-async function getTransformers() {
-  // Resolve the URL explicitly so diagnostics can show the exact path tried.
-  const url = self.chrome.runtime.getURL("vendor/transformers.min.js");
-  try {
-    // Verify the file is fetchable before attempting import().
-    const probe = await fetch(url);
-    if (!probe.ok) {
-      throw new Error(`HTTP ${probe.status}`);
-    }
-  } catch (probeErr) {
-    const msg = `vendor/transformers.min.js not accessible at ${url} — ${probeErr.message}`;
-    await self.chrome.storage.local.set({ lt_vendor_diag: msg });
-    throw new Error(`[LT] ${msg}`);
-  }
-  try {
-    return await import(url);
-  } catch (err) {
-    const msg = `import() failed for ${url} — ${err.message}`;
-    await self.chrome.storage.local.set({ lt_vendor_diag: msg });
-    throw new Error(`[LT] ${msg}`);
-  }
-}
-
 function getPipeline(lang) {
-  // Pick model by detected script.
   const modelId =
     lang === "chi_sim" || lang === "chi_tra" ? CDN.modelZh : CDN.modelJa;
 
-  // Return the cached promise so concurrent callers all await the same load.
   if (pipelinePromises[modelId]) return pipelinePromises[modelId];
 
   pipelinePromises[modelId] = (async () => {
     await setModelStatus("loading", "Loading translation model…");
-
-    const { pipeline, env } = await getTransformers();
-
-    // Use bundled ONNX WASM files (downloaded by setup script into vendor/onnx/).
-    env.backends.onnx.wasm.wasmPaths = self.chrome.runtime.getURL("vendor/onnx/");
-    env.backends.onnx.wasm.numThreads = 1;
-    // Use locally-bundled model weights (downloaded by setup script into vendor/models/).
-    // This makes the extension 100% offline with no runtime network requests.
-    env.localModelPath = self.chrome.runtime.getURL("vendor/models/");
-    env.allowRemoteModels = false;
-    env.useBrowserCache = false;
 
     const pipe = await pipeline("translation", modelId, {
       progress_callback: async (info) => {
@@ -94,7 +64,6 @@ function getPipeline(lang) {
     await setModelStatus("ready", "Translation model ready");
     return pipe;
   })().catch((err) => {
-    // Remove the cached promise so the next call retries from scratch.
     delete pipelinePromises[modelId];
     throw err;
   });
@@ -109,7 +78,6 @@ export async function translate(text, detectedLang) {
     const [result] = await pipe(text, { max_new_tokens: 512 });
     return result?.translation_text ?? text;
   } catch (err) {
-    // Log and return the original text so overlays still render something.
     console.error("[LT] Translation error:", err);
     await setModelStatus("error", String(err));
     return text;
