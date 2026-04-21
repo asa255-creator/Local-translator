@@ -90,17 +90,22 @@
       return canvas;
     } catch (_) {}
 
+    // Slow path: re-fetch as Blob on a FRESH canvas — the fast path already
+    // tainted the first canvas so we must not reuse it.
     try {
       const resp = await fetch(img.src, { credentials: "omit" });
       if (!resp.ok) return null;
       const blob = await resp.blob();
       const bitmap = await createImageBitmap(blob);
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(bitmap, 0, 0);
+      const canvas2 = document.createElement("canvas");
+      canvas2.width = img.naturalWidth;
+      canvas2.height = img.naturalHeight;
+      const ctx2 = canvas2.getContext("2d", { willReadFrequently: true });
+      ctx2.drawImage(bitmap, 0, 0);
       bitmap.close?.();
-      return canvas;
+      ctx2.getImageData(0, 0, 1, 1); // verify readable
+      return canvas2;
     } catch (err) {
-      console.warn("[LT] Cannot access image pixels:", img.src, err);
       return null;
     }
   }
