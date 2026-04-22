@@ -37,4 +37,5 @@ for model in "Xenova/opus-mt-ja-en" "Xenova/opus-mt-zh-en"; do
   fi
 done
 
-exec node "$ROOT/scripts/translation-server.mjs"
+exec node "$ROOT/scripts/translation-server.mjs" 2>&1 \
+  | grep -Ev "CleanUnusedInitializersAndNodeArgs|onnxruntime.*graph\.cc|^\s*$"
