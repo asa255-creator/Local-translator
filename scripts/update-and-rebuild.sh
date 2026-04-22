@@ -1,14 +1,8 @@
 #!/usr/bin/env bash
-# update-and-rebuild.sh — pull latest code, rebuild the extension, relaunch Safari.
+# update-and-rebuild.sh — pull, rebuild, and relaunch with no duplicate extensions.
 #
 # Run from anywhere inside the repo:
 #   ./scripts/update-and-rebuild.sh
-#
-# What it does:
-#   1. git pull (fast-forward only — won't clobber local changes)
-#   2. xcodebuild (debug build, same as ⌘R in Xcode)
-#   3. Opens the built .app so Safari picks up the new extension
-#   4. Prints a timestamped confirmation
 
 set -euo pipefail
 
@@ -20,49 +14,74 @@ PROJECT="$ROOT/LocalTranslator.xcodeproj"
 BUILD_DIR="$ROOT/build"
 
 echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo " Local Translator — update & rebuild"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "========================================"
+echo " Local Translator -- update & rebuild"
+echo "========================================"
 echo ""
 
 # ── 1. Pull latest code ───────────────────────────────────────────────────────
-echo "▶ Pulling latest code…"
+echo "Pulling latest code..."
 git pull --ff-only
-echo "  ✓ Up to date: $(git log -1 --oneline)"
+echo "  OK: $(git log -1 --oneline)"
 echo ""
 
-# ── 2. Build ──────────────────────────────────────────────────────────────────
-echo "▶ Building $SCHEME (this takes ~15 s)…"
+# ── 2. Kill any running instances ─────────────────────────────────────────────
+# Killing the app deregisters its Safari extensions, giving us a clean slate.
+echo "Stopping any running instances..."
+killall "$SCHEME" 2>/dev/null && echo "  Stopped." || echo "  (none running)"
+sleep 1
+
+# ── 3. Build ──────────────────────────────────────────────────────────────────
+echo "Building $SCHEME..."
 xcodebuild \
   -project "$PROJECT" \
   -scheme  "$SCHEME" \
   -configuration Debug \
   -derivedDataPath "$BUILD_DIR/DerivedData" \
   build \
-  | tail -5   # suppress the wall of build output; show last 5 lines only
+  2>&1 | grep -E "error:|warning:|BUILD (SUCCEEDED|FAILED)" | tail -10
 
-APP_PATH="$(find "$BUILD_DIR/DerivedData" -name "$SCHEME.app" -maxdepth 6 | head -1)"
+if ! grep -q "BUILD SUCCEEDED" < <(xcodebuild \
+  -project "$PROJECT" -scheme "$SCHEME" -configuration Debug \
+  -derivedDataPath "$BUILD_DIR/DerivedData" build 2>&1); then
+  # Re-run for the actual result check
+  :
+fi
+
+# ── 4. Remove Index.noindex copy ──────────────────────────────────────────────
+# Xcode creates a second app in Index.noindex/ for code indexing. Safari
+# registers it as a separate extension, causing the duplicate. Deleting it
+# before we open anything prevents Safari from ever seeing two copies.
+echo "Removing indexer copy to prevent duplicate extension..."
+while IFS= read -r stale; do
+  rm -rf "$stale"
+  echo "  Removed: $stale"
+done < <(find "$HOME/Library/Developer/Xcode/DerivedData" "$BUILD_DIR/DerivedData" \
+  -path "*/Index.noindex/Build/Products/*/$SCHEME.app" \
+  -maxdepth 12 2>/dev/null | sort -u)
+
+# ── 5. Find the real build (never Index.noindex) ──────────────────────────────
+APP_PATH="$(find "$BUILD_DIR/DerivedData" -name "$SCHEME.app" -maxdepth 8 \
+  2>/dev/null | grep -v "Index.noindex" | head -1)"
 
 if [[ -z "$APP_PATH" ]]; then
   echo ""
-  echo "✗ Could not find built .app — check Xcode for build errors."
+  echo "ERROR: Could not find built .app -- check Xcode for build errors."
   exit 1
 fi
 
-echo "  ✓ Built: $APP_PATH"
+echo "  Built: $APP_PATH"
 echo ""
 
-# ── 3. Relaunch wrapper app ───────────────────────────────────────────────────
-echo "▶ Launching app (registers new extension with Safari)…"
+# ── 6. Relaunch ───────────────────────────────────────────────────────────────
+echo "Launching app (registers extension with Safari)..."
 open "$APP_PATH"
-echo "  ✓ App launched"
+sleep 1
+echo "  Done."
 echo ""
 
-# ── 4. Done ───────────────────────────────────────────────────────────────────
-TIMESTAMP="$(date '+%Y-%m-%d %H:%M:%S')"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo " ✓ Done at $TIMESTAMP"
-echo " Reload any open Safari tabs to pick up"
-echo " the new extension."
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "========================================"
+echo " OK at $(date '+%Y-%m-%d %H:%M:%S')"
+echo " Reload any open Safari tabs."
+echo "========================================"
 echo ""
