@@ -75,8 +75,12 @@ async function translateViaBackground(text, lang) {
     devLog(`  translation error: ${resp?.error}`, "err");
     return text;
   } catch (err) {
-    if (err.message === "timeout") {
+    // err can be undefined in Safari when the service worker is killed mid-request.
+    const msg = err?.message ?? String(err ?? "connection lost");
+    if (msg === "timeout") {
       devLog("  translation timed out — model still loading?", "err");
+    } else {
+      devLog(`  messaging error: ${msg}`, "err");
     }
     return text;
   }
@@ -88,9 +92,11 @@ function eligibleImages() {
   return Array.from(document.images).filter((img) => {
     if (STATE.processed.has(img)) return false;
     if (!img.complete || img.naturalWidth === 0) return false;
-    if (img.naturalWidth < 80 || img.naturalHeight < 80) return false;
+    // Require a large natural resolution — rules out icons, avatars, thumbnails.
+    if (img.naturalWidth < 300 || img.naturalHeight < 300) return false;
+    // Require a large displayed area — rules out sidebar/grid thumbnails.
     const rect = img.getBoundingClientRect();
-    return rect.width >= 40 && rect.height >= 40;
+    return rect.width >= 300 && rect.height >= 200;
   });
 }
 
@@ -195,7 +201,7 @@ async function rescan() {
     try {
       await processImage(img);
     } catch (err) {
-      devLog(`[ERR]  ${imgLabel(img)}: ${err.message}`, "err");
+      devLog(`[ERR]  ${imgLabel(img)}: ${err?.message ?? String(err)}`, "err");
       console.warn("[LT] failed on image", img.src, err);
     }
     done++;
