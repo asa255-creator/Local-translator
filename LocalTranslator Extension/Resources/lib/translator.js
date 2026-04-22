@@ -4,9 +4,13 @@
 
 const APP_ID = 'com.example.LocalTranslator';
 
+// Safari's primary WebExtensions namespace is `browser`; `chrome` is a compat shim.
+// Use browser for native messaging since that is the Safari-native API.
+const _api = self.browser ?? self.chrome;
+
 async function setStatus(phase, label) {
   try {
-    await chrome.storage.local.set({
+    await _api.storage.local.set({
       lt_modelStatus: { phase, label, pct: null, updatedAt: Date.now() },
     });
   } catch (_) {}
@@ -15,9 +19,10 @@ async function setStatus(phase, label) {
 // Wrap Safari's callback-based sendNativeMessage in a Promise.
 function nativeMessage(payload) {
   return new Promise((resolve, reject) => {
-    chrome.runtime.sendNativeMessage(APP_ID, payload, (response) => {
-      if (chrome.runtime.lastError) {
-        reject(new Error(chrome.runtime.lastError.message ?? 'Native message failed'));
+    _api.runtime.sendNativeMessage(APP_ID, payload, (response) => {
+      const err = _api.runtime.lastError;
+      if (err) {
+        reject(new Error(err.message ?? 'Native message failed'));
       } else {
         resolve(response);
       }
