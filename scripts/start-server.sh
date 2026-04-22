@@ -30,7 +30,7 @@ fi
 for model in "Xenova/opus-mt-ja-en" "Xenova/opus-mt-zh-en"; do
   tok="$MODELS_DIR/$model/tokenizer.json"
   if [[ ! -f "$tok" ]]; then
-    echo "Downloading missing tokenizer.json for $model…"
+    echo "Downloading missing tokenizer.json for $model..."
     mkdir -p "$(dirname "$tok")"
     curl -fsSL "$HF/$model/resolve/main/tokenizer.json" -o "$tok"
     echo "  ✓ $tok"
