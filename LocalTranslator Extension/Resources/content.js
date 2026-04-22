@@ -96,7 +96,11 @@ function eligibleImages() {
     if (img.naturalWidth < 300 || img.naturalHeight < 300) return false;
     // Require a large displayed area — rules out sidebar/grid thumbnails.
     const rect = img.getBoundingClientRect();
-    return rect.width >= 300 && rect.height >= 200;
+    if (rect.width < 300 || rect.height < 200) return false;
+    // Skip banners: very wide but short images used for site headers and ads.
+    // Manga panels are at most ~2:1 wide; banners are typically 4:1 or more.
+    if (rect.width / rect.height > 4) return false;
+    return true;
   });
 }
 
