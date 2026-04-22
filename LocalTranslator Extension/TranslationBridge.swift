@@ -1,0 +1,146 @@
+// TranslationBridge.swift — routes translation requests from the Safari extension
+// into Apple's on-device Translation framework (macOS 15+).
+//
+// Architecture:
+//   JS sendNativeMessage → SafariWebExtensionHandler → TranslationBridge.translate()
+//
+// Per language pair we keep one hidden 1×1 off-screen NSWindow that hosts a
+// SwiftUI view.  That view uses .translationTask to obtain a TranslationSession,
+// then processes requests forwarded through an AsyncStream.  The window is never
+// visible; it only exists to satisfy SwiftUI's view-lifecycle requirement for
+// TranslationSession.
+
+import Foundation
+import AppKit
+import SwiftUI
+import Translation
+import os.log
+
+private let log = Logger(subsystem: "com.example.LocalTranslator", category: "TranslationBridge")
+
+// MARK: - Shared request type
+
+@available(macOS 15.0, *)
+struct TranslationRequest: Sendable {
+    let text: String
+    let continuation: CheckedContinuation<String, Error>
+}
+
+// MARK: - Bridge singleton (MainActor so SwiftUI calls are safe)
+
+@available(macOS 15.0, *)
+@MainActor
+final class TranslationBridge {
+
+    static let shared = TranslationBridge()
+    private init() {}
+
+    private var jaHost: LanguageSessionHost?
+    private var zhHost: LanguageSessionHost?
+
+    func translate(text: String, lang: String) async throws -> String {
+        guard !text.isEmpty else { return "" }
+        let host = langHost(for: lang)
+        return try await host.translate(text)
+    }
+
+    private func langHost(for lang: String) -> LanguageSessionHost {
+        let isZh = lang == "chi_sim" || lang == "chi_tra" || lang.hasPrefix("zh")
+        if isZh {
+            if zhHost == nil { zhHost = LanguageSessionHost(sourceLangId: "zh-Hans") }
+            return zhHost!
+        } else {
+            if jaHost == nil { jaHost = LanguageSessionHost(sourceLangId: "ja") }
+            return jaHost!
+        }
+    }
+}
+
+// MARK: - Per-language session host
+
+@available(macOS 15.0, *)
+@MainActor
+final class LanguageSessionHost {
+
+    private var streamContinuation: AsyncStream<TranslationRequest>.Continuation?
+    private let requestStream: AsyncStream<TranslationRequest>
+    private var window: NSWindow?          // retain to keep SwiftUI lifecycle alive
+
+    init(sourceLangId: String) {
+        var cont: AsyncStream<TranslationRequest>.Continuation!
+        requestStream = AsyncStream(TranslationRequest.self, bufferingPolicy: .unbounded) {
+            cont = $0
+        }
+        streamContinuation = cont
+
+        spawnWorkerWindow(sourceLangId: sourceLangId, stream: requestStream)
+    }
+
+    private func spawnWorkerWindow(sourceLangId: String, stream: AsyncStream<TranslationRequest>) {
+        let source = Locale.Language(identifier: sourceLangId)
+        let target = Locale.Language(identifier: "en")
+        let workerView = TranslationWorkerView(source: source, target: target, requests: stream)
+
+        // A 1×1 borderless window placed off-screen.  It must be ordered on-screen
+        // so SwiftUI's onAppear fires and translationTask activates.
+        let win = NSWindow(
+            contentRect: NSRect(x: -2, y: -2, width: 1, height: 1),
+            styleMask: [.borderless],
+            backing:   .buffered,
+            defer:     false
+        )
+        win.isReleasedWhenClosed  = false
+        win.collectionBehavior    = [.canJoinAllSpaces, .transient]
+        win.ignoresMouseEvents    = true
+        win.contentViewController = NSHostingController(rootView: workerView)
+        win.orderFront(nil)
+        window = win
+
+        log.info("Created translation worker window for \(sourceLangId)")
+    }
+
+    func translate(_ text: String) async throws -> String {
+        return try await withCheckedThrowingContinuation { continuation in
+            streamContinuation?.yield(TranslationRequest(text: text, continuation: continuation))
+        }
+    }
+
+    deinit {
+        streamContinuation?.finish()
+        window?.close()
+    }
+}
+
+// MARK: - SwiftUI view that holds the TranslationSession alive
+
+@available(macOS 15.0, *)
+private struct TranslationWorkerView: View {
+
+    let source:   Locale.Language
+    let target:   Locale.Language
+    let requests: AsyncStream<TranslationRequest>
+
+    @State private var config: TranslationSession.Configuration?
+
+    var body: some View {
+        Color.clear
+            .frame(width: 1, height: 1)
+            .translationTask(config) { session in
+                // This closure runs in a long-lived Task for the lifetime of the view.
+                // It drains the AsyncStream, translating each request in turn.
+                for await req in requests {
+                    do {
+                        let response = try await session.translate(req.text)
+                        req.continuation.resume(returning: response.targetText)
+                    } catch {
+                        log.error("Translation error: \(error.localizedDescription)")
+                        req.continuation.resume(throwing: error)
+                    }
+                }
+            }
+            .onAppear {
+                guard config == nil else { return }
+                config = TranslationSession.Configuration(source: source, target: target)
+            }
+    }
+}

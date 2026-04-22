@@ -1,119 +1,69 @@
-// lib/translator.js — neural machine translation via Transformers.js.
-//
-// THIS MODULE RUNS IN THE BACKGROUND SERVICE WORKER (background.js imports it).
-// It does NOT run in content scripts.
-//
-// Why the service worker? Chrome/Safari put extension service workers in a
-// separate origin context where caches.open() uses the extension's own
-// Cache Storage — shared across every tab. That means the ~150 MB of opus-mt
-// model weights are downloaded exactly once, then served offline forever.
-//
-// Models used (Apache-2.0 / CC-BY-4.0):
-//   Helsinki-NLP/opus-mt-ja-en   (~75 MB, Japanese → English)
-//   Helsinki-NLP/opus-mt-zh-en   (~75 MB, Chinese → English)
-//
-// First call: triggers ONNX WASM download from jsDelivr (~20 MB) and model
-// weight download from Hugging Face (~75 MB per language pair).
-// Every subsequent call: fully offline, reads from extension Cache Storage.
-//
-// Vendor requirement: vendor/transformers.min.js must be present.
-// Run scripts/download-vendors.sh to fetch it.
+// lib/translator.js — sends translation requests to the native Swift handler via
+// Safari's native-messaging API.  All inference runs on-device using Apple's
+// Translation framework (macOS 15+).  No network calls are made.
 
-import { setModelStatus, CDN } from "./model-manager.js";
+const APP_ID = 'com.example.LocalTranslator';
 
-// One pipeline promise per language pair, cached for the service worker's
-// lifetime. Storing the Promise (not the resolved value) means concurrent
-// calls share the same loading operation instead of starting parallel loads.
-// When the service worker restarts (killed after idle timeout), the cache is
-// cleared but model weights come from Cache Storage, so reload is fast.
-const pipelinePromises = {};
-
-async function getTransformers() {
-  // Dynamic import so missing vendor file produces a clear error at call-time,
-  // not at module load time (which would break background.js startup entirely).
+async function setStatus(phase, label) {
   try {
-    return await import("../vendor/transformers.min.js");
-  } catch (err) {
-    throw new Error(
-      "[LT] vendor/transformers.min.js not found. Run scripts/download-vendors.sh first."
-    );
-  }
-}
-
-function getPipeline(lang) {
-  // Pick model by detected script.
-  const modelId =
-    lang === "chi_sim" || lang === "chi_tra" ? CDN.modelZh : CDN.modelJa;
-
-  // Return the cached promise so concurrent callers all await the same load.
-  if (pipelinePromises[modelId]) return pipelinePromises[modelId];
-
-  pipelinePromises[modelId] = (async () => {
-    await setModelStatus("loading", "Loading translation model…");
-
-    const { pipeline, env } = await getTransformers();
-
-    // Point ONNX Runtime WASM at jsDelivr so it can be fetched+cached on
-    // first use. After that it reads from extension Cache Storage.
-    env.backends.onnx.wasm.wasmPaths = CDN.onnxWasmBase;
-    // Disable threading: SharedArrayBuffer requires cross-origin isolation
-    // headers that Safari/Chrome extensions don't expose.
-    env.backends.onnx.wasm.numThreads = 1;
-    // Allow remote model downloads from Hugging Face (first use only).
-    env.allowRemoteModels = true;
-    // Cache model shards in extension Cache Storage.
-    env.useBrowserCache = true;
-
-    const pipe = await pipeline("translation", modelId, {
-      progress_callback: async (info) => {
-        if (info.status === "initiate") {
-          await setModelStatus("downloading", `Starting download: ${info.file ?? modelId}`);
-        } else if (info.status === "downloading") {
-          const pct =
-            info.total > 0 ? Math.round((info.loaded / info.total) * 100) : null;
-          await setModelStatus(
-            "downloading",
-            `Downloading ${info.file ?? "model"}… ${pct != null ? pct + "%" : ""}`,
-            pct
-          );
-        } else if (info.status === "done") {
-          await setModelStatus("loading", `Loaded: ${info.file ?? "model"}`);
-        }
-      },
+    await chrome.storage.local.set({
+      lt_modelStatus: { phase, label, pct: null, updatedAt: Date.now() },
     });
-
-    await setModelStatus("ready", "Translation model ready");
-    return pipe;
-  })().catch((err) => {
-    // Remove the cached promise so the next call retries from scratch.
-    delete pipelinePromises[modelId];
-    throw err;
-  });
-
-  return pipelinePromises[modelId];
+  } catch (_) {}
 }
 
-export async function translate(text, detectedLang) {
-  if (!text?.trim()) return "";
+// Wrap Safari's callback-based sendNativeMessage in a Promise.
+function nativeMessage(payload) {
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendNativeMessage(APP_ID, payload, (response) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message ?? 'Native message failed'));
+      } else {
+        resolve(response);
+      }
+    });
+  });
+}
+
+export async function translate(text, lang) {
+  if (!text?.trim()) return '';
   try {
-    const pipe = await getPipeline(detectedLang ?? "jpn");
-    const [result] = await pipe(text, { max_new_tokens: 512 });
-    return result?.translation_text ?? text;
+    const response = await nativeMessage({
+      type: 'translate',
+      text,
+      lang: lang ?? 'jpn',
+    });
+    if (!response?.ok) {
+      const msg = response?.error ?? 'Translation failed';
+      await setStatus('error', msg);
+      return text;
+    }
+    return response.text ?? text;
   } catch (err) {
-    // Log and return the original text so overlays still render something.
-    console.error("[LT] Translation error:", err);
-    await setModelStatus("error", String(err));
+    await setStatus('error', `Translation error: ${err.message}`);
     return text;
   }
 }
 
-// Called by background.js on install to pre-warm the Japanese pipeline
-// in the background so the first real translation is instant.
-export async function preWarm() {
+// Ping the native handler to confirm it is reachable and macOS 15 is available.
+export async function checkNative() {
   try {
-    await getPipeline("jpn");
-  } catch {
-    // Non-fatal: pre-warm is best-effort. If vendor file is missing the
-    // user will see the error on first real translation attempt.
+    const response = await nativeMessage({ type: 'ping' });
+    return response ?? { ok: false, error: 'No response from native handler' };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
+// Called on extension install — sets the initial translation status banner.
+export async function preWarm() {
+  const result = await checkNative();
+  if (result.ok) {
+    await setStatus('ready', 'Translation: Apple on-device · fully offline');
+  } else {
+    const msg = (result.error ?? '').includes('macOS 15')
+      ? 'Requires macOS 15 Sequoia — upgrade to enable translation'
+      : `Translation unavailable: ${result.error ?? 'unknown error'}`;
+    await setStatus('error', msg);
   }
 }

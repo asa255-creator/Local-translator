@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Local Translator",
-  "version": "0.1.0",
-  "description": "Offline image translator: detects Japanese/Chinese text in speech bubbles and overlays English translations. Models download once from free CDNs, then run fully offline.",
+  "version": "0.2.0",
+  "description": "Offline image translator: detects Japanese/Chinese text in speech bubbles and overlays English translations. Translation runs entirely on-device via Apple's Translation framework — no internet required.",
   "default_locale": "en",
 
   "action": {
@@ -44,7 +44,8 @@
   "permissions": [
     "storage",
     "activeTab",
-    "scripting"
+    "scripting",
+    "nativeMessaging"
   ],
 
   "host_permissions": [
@@ -56,6 +57,8 @@
       "resources": [
         "lib/*",
         "vendor/*",
+        "vendor/tesseract/*",
+        "vendor/traineddata/*",
         "dictionary/*"
       ],
       "matches": ["<all_urls>"]
@@ -63,6 +66,6 @@
   ],
 
   "content_security_policy": {
-    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.huggingface.co; default-src 'self'"
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src 'self'; default-src 'self'"
   }
 }
