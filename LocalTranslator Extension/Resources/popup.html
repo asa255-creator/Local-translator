@@ -59,7 +59,7 @@
       <div class="model-row">
         <span class="dot" id="mt-dot"></span>
         <div>
-          <div class="model-name">Translation server (localhost)</div>
+          <div class="model-name">Translation — Apple on-device</div>
           <div class="model-sub" id="mt-status">Checking…</div>
         </div>
       </div>
@@ -70,7 +70,7 @@
     </section>
 
     <footer>
-      <small>OCR runs offline. Translation requires <strong>./scripts/start-server.sh</strong> running in a terminal.</small>
+      <small>Everything runs fully offline on this device. OCR via Tesseract · Translation via Apple.</small>
     </footer>
 
     <section class="dev-row">
@@ -85,13 +85,7 @@
     </section>
 
     <section id="dev-panel" class="dev-panel hidden">
-      <div id="dev-sw-status" class="dev-cs-status">Service worker: checking…</div>
       <div id="dev-cs-status" class="dev-cs-status">Content script: checking…</div>
-      <div id="dev-vendor-diag" class="dev-vendor-diag hidden"></div>
-      <div class="dev-actions">
-        <button id="dev-reload-btn" type="button" title="Clear cached pipeline and re-run model load (Safari-compatible)">Retry Pipeline Load</button>
-        <button id="dev-restart-btn" type="button" title="Toggle translation off then on again and rescan">Restart &amp; Rescan</button>
-      </div>
       <div class="dev-log-header">
         <span>Activity Log</span>
         <button id="dev-clear-btn" type="button">Clear</button>

@@ -1,64 +1,74 @@
-// lib/translator.js — sends translation requests to the local Node.js server.
-//
-// The heavy ML inference (ONNX / opus-mt) runs in a Node.js process started
-// by scripts/start-server.sh.  This file is a thin fetch wrapper; there is no
-// WASM, no model loading, and no service-worker limitations to worry about.
-//
-// Server must be running at http://127.0.0.1:7070 before translations work.
-// Start it with:  ./scripts/start-server.sh
+// lib/translator.js — sends translation requests to the native Swift handler via
+// Safari's native-messaging API.  All inference runs on-device using Apple's
+// Translation framework (macOS 15+).  No network calls are made.
 
-const SERVER = 'http://127.0.0.1:7070';
-const TIMEOUT_MS = 60_000;
+const APP_ID = 'com.example.LocalTranslator';
+
+// Safari's primary WebExtensions namespace is `browser`; `chrome` is a compat shim.
+// Use browser for native messaging since that is the Safari-native API.
+const _api = self.browser ?? self.chrome;
 
 async function setStatus(phase, label) {
   try {
-    await chrome.storage.local.set({
+    await _api.storage.local.set({
       lt_modelStatus: { phase, label, pct: null, updatedAt: Date.now() },
     });
   } catch (_) {}
 }
 
+// Wrap Safari's callback-based sendNativeMessage in a Promise.
+function nativeMessage(payload) {
+  return new Promise((resolve, reject) => {
+    _api.runtime.sendNativeMessage(APP_ID, payload, (response) => {
+      const err = _api.runtime.lastError;
+      if (err) {
+        reject(new Error(err.message ?? 'Native message failed'));
+      } else {
+        resolve(response);
+      }
+    });
+  });
+}
+
 export async function translate(text, lang) {
   if (!text?.trim()) return '';
   try {
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
-    const resp = await fetch(`${SERVER}/translate`, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ text, lang: lang ?? 'jpn' }),
-      signal:  ctrl.signal,
+    const response = await nativeMessage({
+      type: 'translate',
+      text,
+      lang: lang ?? 'jpn',
     });
-    clearTimeout(timer);
-    const data = await resp.json();
-    if (!data.ok) throw new Error(data.error);
-    return data.text;
+    if (!response?.ok) {
+      const msg = response?.error ?? 'Translation failed';
+      await setStatus('error', msg);
+      return text;
+    }
+    return response.text ?? text;
   } catch (err) {
-    const offline = err.name === 'TypeError' || err.name === 'AbortError';
-    await setStatus('error', offline
-      ? 'Translation server offline — run: ./scripts/start-server.sh'
-      : `Translation error: ${err.message}`);
+    await setStatus('error', `Translation error: ${err.message}`);
     return text;
   }
 }
 
-// Check whether the server is reachable. Returns { ok, models } or throws.
-export async function checkServer() {
-  const resp = await fetch(`${SERVER}/status`, {
-    signal: AbortSignal.timeout(2_000),
-  });
-  return resp.json();
+// Ping the native handler to confirm it is reachable and macOS 15 is available.
+export async function checkNative() {
+  try {
+    const response = await nativeMessage({ type: 'ping' });
+    return response ?? { ok: false, error: 'No response from native handler' };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
 }
 
-// Called on extension install — checks server and writes status to storage.
+// Called on extension install — sets the initial translation status banner.
 export async function preWarm() {
-  try {
-    const { models } = await checkServer();
-    const jaReady = models.some((m) => m.includes('ja'));
-    await setStatus('ready', jaReady
-      ? 'Server ready · model warm'
-      : 'Server running · model loading…');
-  } catch {
-    await setStatus('error', 'Translation server offline — run: ./scripts/start-server.sh');
+  const result = await checkNative();
+  if (result.ok) {
+    await setStatus('ready', 'Translation: Apple on-device · fully offline');
+  } else {
+    const msg = (result.error ?? '').includes('macOS 15')
+      ? 'Requires macOS 15 Sequoia — upgrade to enable translation'
+      : `Translation unavailable: ${result.error ?? 'unknown error'}`;
+    await setStatus('error', msg);
   }
 }

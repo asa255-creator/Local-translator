@@ -1,9 +1,11 @@
 // background.js — service worker for Local Translator.
 //
-// Translation runs in a local Node.js server (scripts/start-server.sh).
-// This worker just routes messages between the content script and that server.
+// Translation is handled natively by the Swift SafariWebExtensionHandler via
+// Apple's Translation framework.  This worker routes TRANSLATE messages from
+// content scripts to the native handler and re-broadcasts STATUS/PROGRESS
+// messages to the popup.
 
-import { translate, preWarm, checkServer } from "./lib/translator.js";
+import { translate, preWarm } from "./lib/translator.js";
 
 const api = self.chrome ?? self.browser;
 
@@ -48,16 +50,10 @@ api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     translate(msg.text, msg.lang)
       .then((text) => sendResponse({ ok: true, text }))
       .catch((err) => sendResponse({ ok: false, error: String(err) }));
-    return true;
+    return true; // keep channel open for async response
   }
 
   if (msg?.type === "PROGRESS" || msg?.type === "STATUS") {
     api.runtime.sendMessage(msg).catch(() => {});
-  }
-
-  // Popup "Retry" button — re-checks server and updates status.
-  if (msg?.type === "RELOAD_PIPELINE") {
-    preWarm().then(() => sendResponse({ ok: true }));
-    return true;
   }
 });
