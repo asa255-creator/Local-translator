@@ -53,8 +53,9 @@ if [[ -n "$REAL" ]]; then
   open "$REAL"
   echo "  Relaunched from: $REAL"
   echo ""
-  echo "Done. Check Safari Settings -> Extensions."
-  echo "If still two entries: quit Safari once (cmd+Q), reopen it, done."
+  echo "App launched. Check Safari Settings -> Extensions now."
+  echo "If two entries still appear: Safari is holding ghost registrations"
+  echo "in memory. Quit Safari (cmd+Q), reopen it — they will be gone."
 else
   echo ""
   echo "No built app found. Run ./scripts/update-and-rebuild.sh first,"
