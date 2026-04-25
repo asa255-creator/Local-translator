@@ -94,11 +94,13 @@ function eligibleImages() {
     if (!img.complete || img.naturalWidth === 0) return false;
     // Require a large natural resolution — rules out icons, avatars, thumbnails.
     if (img.naturalWidth < 300 || img.naturalHeight < 300) return false;
+    // Reject landscape images: 16:9 video thumbnails (hq720.jpg etc.) have
+    // naturalHeight/naturalWidth ≈ 0.56. Manga is portrait or near-square (≥ 0.6).
+    if (img.naturalHeight / img.naturalWidth < 0.6) return false;
     // Require a large displayed area — rules out sidebar/grid thumbnails.
     const rect = img.getBoundingClientRect();
     if (rect.width < 300 || rect.height < 200) return false;
     // Skip banners: very wide but short images used for site headers and ads.
-    // Manga panels are at most ~2:1 wide; banners are typically 4:1 or more.
     if (rect.width / rect.height > 4) return false;
     return true;
   });
@@ -119,16 +121,19 @@ async function imageToCanvas(img) {
 
   // Slow path: cross-origin. Re-fetch as Blob — extension content scripts
   // can make cross-origin fetches via host_permissions <all_urls>.
-  // A Blob-derived ImageBitmap does not taint the canvas.
+  // Must use a FRESH canvas: once tainted by a cross-origin drawImage, a canvas
+  // cannot be untainted even after clearRect — getImageData would still throw.
   try {
     const resp = await fetch(img.src, { credentials: "omit" });
     if (!resp.ok) return null;
     const blob = await resp.blob();
     const bitmap = await createImageBitmap(blob);
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(bitmap, 0, 0);
+    const fresh = document.createElement("canvas");
+    fresh.width = img.naturalWidth;
+    fresh.height = img.naturalHeight;
+    fresh.getContext("2d", { willReadFrequently: true }).drawImage(bitmap, 0, 0);
     bitmap.close?.();
-    return canvas;
+    return fresh;
   } catch (err) {
     console.warn("[LT] Cannot access image pixels:", img.src, err);
     return null;
