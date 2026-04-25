@@ -2,96 +2,62 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Local Translator</title>
     <link rel="stylesheet" href="popup.css" />
+    <style>
+      .pick-btn {
+        display: block;
+        width: 100%;
+        padding: 12px;
+        font-size: 14px;
+        font-weight: 600;
+        background: var(--accent);
+        color: #fff;
+        border: none;
+        border-radius: 10px;
+        cursor: pointer;
+        margin-bottom: 8px;
+      }
+      .pick-btn:hover { opacity: 0.88; }
+      .pick-btn:active { opacity: 0.72; }
+      .row-pair {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 14px;
+      }
+      .row-pair select { flex: 1; }
+      .row-pair .secondary {
+        cursor: pointer;
+        color: var(--muted);
+        white-space: nowrap;
+      }
+    </style>
   </head>
   <body>
     <header>
       <h1>Local Translator</h1>
-      <p class="tagline">Offline image translation</p>
+      <p class="tagline">Offline · Apple on-device translation</p>
     </header>
 
-    <section class="toggle-row">
-      <label class="switch">
-        <input type="checkbox" id="enabled-toggle" />
-        <span class="slider"></span>
-      </label>
-      <div>
-        <div class="toggle-label">Translate images on this page</div>
-        <div class="toggle-hint" id="toggle-hint">Off</div>
-      </div>
-    </section>
-
-    <section class="lang-row">
-      <label for="source-lang">Source language</label>
+    <div class="row-pair">
       <select id="source-lang">
         <option value="auto">Auto-detect</option>
         <option value="jpn">Japanese</option>
         <option value="chi_sim">Chinese (Simplified)</option>
         <option value="chi_tra">Chinese (Traditional)</option>
       </select>
-    </section>
+      <button id="clear-btn" class="secondary">Remove overlays</button>
+    </div>
 
-    <section class="actions">
-      <button id="rescan-btn" type="button">Rescan page</button>
-      <button id="clear-btn" type="button" class="secondary">Remove overlays</button>
-    </section>
+    <button id="pick-btn" class="pick-btn">Translate an image</button>
 
-    <section class="status">
-      <div id="status-text">Idle.</div>
-      <div id="progress" class="progress hidden">
-        <div class="bar" id="progress-bar"></div>
-      </div>
-    </section>
-
-    <section class="models">
-      <div class="model-heading">Models</div>
-
-      <div class="model-row">
-        <span class="dot dot-ok"></span>
-        <div>
-          <div class="model-name">OCR — Tesseract.js</div>
-          <div class="model-sub" id="ocr-status">Bundled · offline</div>
-        </div>
-      </div>
-
-      <div class="model-row">
-        <span class="dot" id="mt-dot"></span>
-        <div>
-          <div class="model-name">Translation — Apple on-device</div>
-          <div class="model-sub" id="mt-status">Checking…</div>
-        </div>
-      </div>
-
-      <div id="mt-bar-wrap" class="progress hidden">
-        <div class="bar" id="mt-bar"></div>
-      </div>
-    </section>
-
-    <footer>
-      <small>Everything runs fully offline on this device. OCR via Tesseract · Translation via Apple.</small>
-    </footer>
-
-    <section class="dev-row">
-      <div class="dev-row-text">
-        <span class="dev-row-label">Developer log</span>
-        <span class="dev-row-sub">Detailed scan output</span>
-      </div>
-      <label class="switch switch-sm">
-        <input type="checkbox" id="dev-toggle" />
-        <span class="slider"></span>
-      </label>
-    </section>
-
-    <section id="dev-panel" class="dev-panel hidden">
-      <div id="dev-cs-status" class="dev-cs-status">Content script: checking…</div>
+    <div class="dev-panel">
       <div class="dev-log-header">
-        <span>Activity Log</span>
-        <button id="dev-clear-btn" type="button">Clear</button>
+        <span>Activity log</span>
+        <button id="dev-clear-btn">Clear</button>
       </div>
       <div id="dev-log" class="dev-log"></div>
-    </section>
+    </div>
 
     <script src="popup.js"></script>
   </body>
