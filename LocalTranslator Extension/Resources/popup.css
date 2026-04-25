@@ -301,7 +301,7 @@ footer {
   word-break: break-all;
 }
 .dev-log:empty::before {
-  content: "Waiting for scan…";
+  content: "Click 'Translate an image', then click an image on the page.";
   color: #555;
 }
 /* Log entry colours */

@@ -32,8 +32,19 @@ langEl.addEventListener("change", () => {
 
 pickBtn.addEventListener("click", async () => {
   await api.storage.local.set({ sourceLang: langEl.value });
-  await sendToContent({ type: "ENTER_PICK_MODE", sourceLang: langEl.value });
-  window.close();
+  const tab = await getActiveTab();
+  if (!tab?.id) {
+    pickBtn.textContent = "No active page — navigate to a page first";
+    return;
+  }
+  try {
+    await api.tabs.sendMessage(tab.id, { type: "ENTER_PICK_MODE", sourceLang: langEl.value });
+    pickBtn.textContent = "✓ Now click an image on the page";
+    pickBtn.style.background = "#34c759";
+    setTimeout(() => window.close(), 1000);
+  } catch {
+    pickBtn.textContent = "Reload the page and try again";
+  }
 });
 
 clearBtn.addEventListener("click", async () => {

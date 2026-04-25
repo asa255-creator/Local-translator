@@ -160,6 +160,7 @@ function attachClickListeners() {
       img.style.outline = "";
       img.style.outlineOffset = "";
       img.style.cursor = "";
+      removePickBanner();
       const r = img.getBoundingClientRect();
       devLog(
         `[CLICK] ${imgLabel(img)} — ` +
@@ -174,11 +175,32 @@ function attachClickListeners() {
   }
 }
 
+// ── Pick-mode banner ──────────────────────────────────────────────────────────
+
+function showPickBanner() {
+  removePickBanner();
+  const el = document.createElement("div");
+  el.id = "_lt_banner";
+  el.textContent = "Local Translator — click an image to translate it";
+  el.style.cssText = [
+    "position:fixed", "top:16px", "left:50%", "transform:translateX(-50%)",
+    "z-index:2147483647", "background:rgba(10,132,255,0.93)", "color:#fff",
+    "padding:10px 20px", "border-radius:10px", "font:600 13px/-apple-system,sans-serif",
+    "pointer-events:none", "box-shadow:0 4px 20px rgba(0,0,0,0.3)",
+  ].join(";");
+  document.body.appendChild(el);
+}
+
+function removePickBanner() {
+  document.getElementById("_lt_banner")?.remove();
+}
+
 function clearOverlays() {
   for (const [, ov] of STATE.overlays) ov.remove?.();
   STATE.overlays.clear();
   STATE.processed = new WeakSet();
   STATE.pickMode = false;
+  removePickBanner();
 }
 
 // ── Messages ──────────────────────────────────────────────────────────────────
@@ -189,6 +211,7 @@ api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       STATE.pickMode = true;
       if (msg.sourceLang) STATE.sourceLang = msg.sourceLang;
       attachClickListeners();
+      showPickBanner();
       devLog("[PICK] Click an image to translate it.", "scan");
       await flush();
       sendResponse({ ok: true });
