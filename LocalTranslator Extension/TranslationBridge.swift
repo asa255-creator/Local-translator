@@ -107,7 +107,8 @@ final class LanguageSessionHost {
 
     deinit {
         streamContinuation?.finish()
-        window?.close()
+        let w = window
+        DispatchQueue.main.async { w?.close() }
     }
 }
 
