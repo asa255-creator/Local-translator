@@ -37,7 +37,6 @@ api.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
   if (!enabled) return;
   try {
     await api.tabs.sendMessage(tabId, { type: "SET_ENABLED", enabled: true, sourceLang });
-    await api.tabs.sendMessage(tabId, { type: "RESCAN" });
   } catch {
     // Content script not available (chrome://, PDF, etc.) — ignore.
   }

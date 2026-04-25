@@ -210,7 +210,7 @@ async function rescan() {
     try {
       await processImage(img);
     } catch (err) {
-      devLog(`[ERR]  ${imgLabel(img)}: ${err?.message ?? String(err)}`, "err");
+      devLog(`[ERR]  ${imgLabel(img)}:\n  ${errDetail(img, err)}`, "err");
       console.warn("[LT] failed on image", img.src, err);
     }
     done++;
@@ -226,6 +226,62 @@ function clearOverlays() {
   STATE.processed = new WeakSet();
 }
 
+// ── Error detail helper ───────────────────────────────────────────────────────
+
+function errDetail(img, err) {
+  let xo = "?";
+  try { xo = new URL(img.src).origin !== location.origin ? "yes" : "no"; } catch {}
+  const rect = img.getBoundingClientRect();
+  return (
+    `${err?.message ?? String(err)}\n` +
+    `  natural: ${img.naturalWidth}×${img.naturalHeight}px | ` +
+    `  displayed: ${Math.round(rect.width)}×${Math.round(rect.height)}px | ` +
+    `  cross-origin: ${xo}\n` +
+    `  src: …${img.src.slice(-80)}`
+  );
+}
+
+// ── Click-to-translate ────────────────────────────────────────────────────────
+
+function attachClickListeners() {
+  for (const img of document.images) {
+    if (img._ltListening) continue;
+    img._ltListening = true;
+    img.addEventListener("mouseenter", () => {
+      if (!STATE.enabled || STATE.processed.has(img)) return;
+      img.style.outline = "3px solid rgba(99,179,237,0.8)";
+      img.style.outlineOffset = "-3px";
+      img.style.cursor = "zoom-in";
+    });
+    img.addEventListener("mouseleave", () => {
+      img.style.outline = "";
+      img.style.outlineOffset = "";
+      img.style.cursor = "";
+    });
+    img.addEventListener("click", async (e) => {
+      if (!STATE.enabled || STATE.processed.has(img)) return;
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      img.style.outline = "";
+      img.style.outlineOffset = "";
+      img.style.cursor = "";
+      const label = imgLabel(img);
+      const rect = img.getBoundingClientRect();
+      devLog(
+        `[CLICK] ${label}\n` +
+        `  natural: ${img.naturalWidth}×${img.naturalHeight}px | ` +
+        `  displayed: ${Math.round(rect.width)}×${Math.round(rect.height)}px`,
+        "scan"
+      );
+      try {
+        await processImage(img);
+      } catch (err) {
+        devLog(`[ERR]  ${label}:\n  ${errDetail(img, err)}`, "err");
+      }
+    }, true);
+  }
+}
+
 // ── Message handling ──────────────────────────────────────────────────────────
 
 api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
@@ -234,7 +290,12 @@ api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       case "SET_ENABLED":
         STATE.enabled = !!msg.enabled;
         if (msg.sourceLang) STATE.sourceLang = msg.sourceLang;
-        if (!STATE.enabled) clearOverlays();
+        if (STATE.enabled) {
+          attachClickListeners();
+          devLog("[READY] Click any image to translate it, or use 'Rescan page' to scan all.", "scan");
+        } else {
+          clearOverlays();
+        }
         sendResponse({ ok: true });
         break;
       case "SET_SOURCE_LANG":
@@ -265,13 +326,12 @@ api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   ]);
   STATE.enabled = enabled;
   STATE.sourceLang = sourceLang;
+  attachClickListeners();
   if (enabled) {
-    await new Promise((r) => setTimeout(r, 400));
-    await rescan();
+    devLog("[READY] Click any image to translate it, or use 'Rescan page' to scan all.", "scan");
   }
 
   const observer = new MutationObserver((mutations) => {
-    if (!STATE.enabled) return;
     const hasNewImages = mutations.some((m) =>
       Array.from(m.addedNodes).some(
         (n) => n.nodeType === 1 && (n.tagName === "IMG" || n.querySelector?.("img"))
@@ -279,7 +339,7 @@ api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     );
     if (hasNewImages) {
       clearTimeout(init._t);
-      init._t = setTimeout(rescan, 800);
+      init._t = setTimeout(attachClickListeners, 600);
     }
   });
   observer.observe(document.documentElement, { childList: true, subtree: true });
