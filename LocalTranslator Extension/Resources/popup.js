@@ -30,7 +30,15 @@ langEl.addEventListener("change", () => {
 
 // ── Buttons ───────────────────────────────────────────────────────────────────
 
+// Holds the in-flight clear promise so Translate can wait for it to finish.
+let _clearPromise = null;
+
 pickBtn.addEventListener("click", async () => {
+  // If the user just clicked Clear, wait for it to fully complete before
+  // sending ENTER_PICK_MODE — otherwise the flush inside ENTER_PICK_MODE
+  // can race with CLEAR_LOG and write old entries back to storage.
+  if (_clearPromise) await _clearPromise;
+
   await api.storage.local.set({ sourceLang: langEl.value });
   const tab = await getActiveTab();
   if (!tab?.id) {
@@ -89,12 +97,14 @@ api.storage.onChanged.addListener((changes, area) => {
   renderEntries(entries);
 });
 
-devClear.addEventListener("click", async () => {
+devClear.addEventListener("click", () => {
   devLogEl.innerHTML = "";
   _lastLen = 0;
-  await sendToContent({ type: "CLEAR_LOG" });
-  // Fallback: clear storage directly in case content script isn't present.
-  await api.storage.local.set({ lt_devLog: [] });
+  _clearPromise = (async () => {
+    await sendToContent({ type: "CLEAR_LOG" });
+    await api.storage.local.set({ lt_devLog: [] });
+  })();
+  _clearPromise.finally(() => { _clearPromise = null; });
 });
 
 // ── Init ──────────────────────────────────────────────────────────────────────

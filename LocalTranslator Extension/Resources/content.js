@@ -190,7 +190,6 @@ api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       attachClickListeners();
       showPickBanner();
       devLog("[PICK] Click an image to translate it.", "scan");
-      await flush();
       sendResponse({ ok: true });
     } else if (msg?.type === "CLEAR_OVERLAYS") {
       clearOverlays();
