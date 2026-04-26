@@ -15,6 +15,7 @@ const STATE = {
 
 const _queue = [];
 let _flushTimer = null;
+let _clearGen = 0;
 
 function devLog(entry, kind) {
   _queue.push({ entry, kind });
@@ -24,9 +25,12 @@ function devLog(entry, kind) {
 async function flush() {
   _flushTimer = null;
   if (!_queue.length) return;
+  const gen = _clearGen;
   const batch = _queue.splice(0);
   try {
     const { lt_devLog: prev = [] } = await api.storage.local.get("lt_devLog");
+    // Abort if a clear happened while we were waiting for storage.get().
+    if (gen !== _clearGen) return;
     await api.storage.local.set({ lt_devLog: [...prev, ...batch].slice(-300) });
   } catch {}
 }
@@ -191,7 +195,7 @@ api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       clearOverlays();
       sendResponse({ ok: true });
     } else if (msg?.type === "CLEAR_LOG") {
-      // Wipe both the in-memory queue and storage so stale entries can't flush back.
+      _clearGen++;
       _queue.length = 0;
       clearTimeout(_flushTimer);
       _flushTimer = null;
