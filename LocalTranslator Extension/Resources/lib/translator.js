@@ -30,6 +30,15 @@ function nativeMessage(payload) {
   });
 }
 
+export async function ocr(url, referer) {
+  try {
+    const response = await nativeMessage({ type: 'ocr', url, referer: referer ?? '' });
+    return response ?? { ok: false, error: 'No response' };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
 export async function translate(text, lang) {
   if (!text?.trim()) return '';
   try {

@@ -1,13 +1,5 @@
-// SafariWebExtensionHandler.swift — native message bridge between the Safari
-// web extension (JavaScript) and Apple's Translation framework (Swift).
-//
-// Messages arrive from background.js via browser.runtime.sendNativeMessage().
-// Supported message types:
-//   { type: "ping" }                          → { ok: true, engine: "apple" }
-//   { type: "translate", text, lang }         → { ok: true, text: "..." }
-//                                          or → { ok: false, error: "..." }
-
 import SafariServices
+import Vision
 import os.log
 
 private let log = Logger(subsystem: "com.example.LocalTranslator", category: "ExtensionHandler")
@@ -39,24 +31,106 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             let lang = message["lang"] as? String ?? "jpn"
             handleTranslate(text: text, lang: lang, context: context)
 
+        case "ocr":
+            let url     = message["url"]     as? String ?? ""
+            let referer = message["referer"] as? String ?? ""
+            handleOCR(urlString: url, referer: referer, context: context)
+
         default:
             finish(context, ["ok": true])
         }
     }
 
-    // MARK: - Private
+    // MARK: - OCR
+
+    private func handleOCR(urlString: String, referer: String, context: NSExtensionContext) {
+        guard let url = URL(string: urlString) else {
+            finish(context, ["ok": false, "error": "Invalid URL: \(urlString)"])
+            return
+        }
+
+        Task {
+            do {
+                // Build a browser-like request so CDN hotlink protection passes.
+                var req = URLRequest(url: url, timeoutInterval: 20)
+                req.setValue(
+                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18 Safari/605.1.15",
+                    forHTTPHeaderField: "User-Agent"
+                )
+                if !referer.isEmpty {
+                    req.setValue(referer, forHTTPHeaderField: "Referer")
+                }
+
+                let (data, response) = try await URLSession.shared.data(for: req)
+                if let http = response as? HTTPURLResponse, http.statusCode != 200 {
+                    self.finish(context, ["ok": false, "error": "HTTP \(http.statusCode)"])
+                    return
+                }
+
+                guard let cgImage = Self.cgImage(from: data) else {
+                    self.finish(context, ["ok": false, "error": "Cannot decode image data"])
+                    return
+                }
+
+                let observations = try await Self.recognizeText(in: cgImage)
+                log.info("OCR: \(observations.count) region(s) in \(urlString)")
+                self.finish(context, ["ok": true, "observations": observations])
+
+            } catch {
+                log.error("OCR failed: \(error.localizedDescription)")
+                self.finish(context, ["ok": false, "error": error.localizedDescription])
+            }
+        }
+    }
+
+    private static func cgImage(from data: Data) -> CGImage? {
+        guard let src = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        return CGImageSourceCreateImageAtIndex(src, 0, nil)
+    }
+
+    private static func recognizeText(in cgImage: CGImage) async throws -> [[String: Any]] {
+        try await withCheckedThrowingContinuation { continuation in
+            let request = VNRecognizeTextRequest { req, err in
+                if let err = err { continuation.resume(throwing: err); return }
+                let obs = (req.results as? [VNRecognizedTextObservation]) ?? []
+                let result: [[String: Any]] = obs.compactMap { o in
+                    guard let top = o.topCandidates(1).first, top.confidence > 0.2 else { return nil }
+                    let b = o.boundingBox
+                    return [
+                        "text":       top.string,
+                        "confidence": Double(top.confidence),
+                        // Vision uses bottom-left origin; flip Y for top-left (CSS) origin.
+                        "x": Double(b.minX),
+                        "y": Double(1.0 - b.maxY),
+                        "w": Double(b.width),
+                        "h": Double(b.height),
+                    ]
+                }
+                continuation.resume(returning: result)
+            }
+            request.recognitionLevel = .accurate
+            request.recognitionLanguages = ["zh-Hans", "zh-Hant", "ja", "en-US"]
+            request.usesLanguageCorrection = false
+
+            do {
+                try VNImageRequestHandler(cgImage: cgImage, options: [:]).perform([request])
+            } catch {
+                continuation.resume(throwing: error)
+            }
+        }
+    }
+
+    // MARK: - Translation
 
     private func handleTranslate(text: String, lang: String, context: NSExtensionContext) {
         guard !text.isEmpty else {
             finish(context, ["ok": true, "text": ""])
             return
         }
-
         guard #available(macOS 15.0, *) else {
             finish(context, ["ok": false, "error": "macOS 15 required for on-device translation"])
             return
         }
-
         Task { @MainActor in
             do {
                 let result = try await TranslationBridge.shared.translate(text: text, lang: lang)

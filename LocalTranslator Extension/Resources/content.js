@@ -38,19 +38,6 @@ function imgLabel(img) {
   } catch { return img.src.slice(-30); }
 }
 
-function errDetail(img, err) {
-  let xo = "?";
-  try { xo = new URL(img.src).origin !== location.origin ? "yes" : "no"; } catch {}
-  const r = img.getBoundingClientRect();
-  return (
-    `${err?.message ?? String(err)}\n` +
-    `  natural ${img.naturalWidth}×${img.naturalHeight} | ` +
-    `displayed ${Math.round(r.width)}×${Math.round(r.height)} | ` +
-    `cross-origin: ${xo}\n` +
-    `  ${img.src.slice(-80)}`
-  );
-}
-
 // ── Translation ───────────────────────────────────────────────────────────────
 
 async function translateViaBackground(text, lang) {
@@ -68,85 +55,50 @@ async function translateViaBackground(text, lang) {
   }
 }
 
-// ── Canvas ────────────────────────────────────────────────────────────────────
-
-async function imageToCanvas(img) {
-  const canvas = document.createElement("canvas");
-  canvas.width  = img.naturalWidth;
-  canvas.height = img.naturalHeight;
-  const ctx = canvas.getContext("2d", { willReadFrequently: true });
-
-  try {
-    ctx.drawImage(img, 0, 0);
-    ctx.getImageData(0, 0, 1, 1); // throws if cross-origin tainted
-    return canvas;
-  } catch {}
-
-  // Content-script fetch (works if the CDN allows cross-origin or the
-  // extension's host_permissions override CORS for this origin).
-  try {
-    const resp = await fetch(img.src, { credentials: "omit" });
-    if (resp.ok) {
-      const bitmap = await createImageBitmap(await resp.blob());
-      const fresh = document.createElement("canvas");
-      fresh.width  = img.naturalWidth;
-      fresh.height = img.naturalHeight;
-      fresh.getContext("2d", { willReadFrequently: true }).drawImage(bitmap, 0, 0);
-      bitmap.close?.();
-      return fresh;
-    }
-    devLog(`  direct fetch: HTTP ${resp.status}`, "err");
-  } catch (e) {
-    devLog(`  direct fetch failed: ${e?.message}`, "err");
-  }
-
-  // Last resort: route through the background service worker.
-  // Background scripts bypass CDN CORS restrictions via host_permissions.
-  try {
-    const r = await api.runtime.sendMessage({ type: "FETCH_IMAGE", url: img.src });
-    if (!r?.ok) { devLog(`  bg fetch failed: ${r?.error}`, "err"); return null; }
-    const binary = atob(r.b64);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-    const bitmap = await createImageBitmap(new Blob([bytes]));
-    const fresh = document.createElement("canvas");
-    fresh.width  = img.naturalWidth;
-    fresh.height = img.naturalHeight;
-    fresh.getContext("2d", { willReadFrequently: true }).drawImage(bitmap, 0, 0);
-    bitmap.close?.();
-    return fresh;
-  } catch (e) {
-    devLog(`  bg fetch failed: ${e?.message}`, "err");
-    return null;
-  }
-}
-
-// ── Process one image ─────────────────────────────────────────────────────────
+// ── Process one image via native Swift OCR ────────────────────────────────────
 
 async function processImage(img) {
   const label = imgLabel(img);
-  const canvas = await imageToCanvas(img);
-  if (!canvas) {
-    devLog(`[SKIP] ${label} — cannot read pixels (cross-origin blocked)`, "skip");
+  devLog(`[OCR]  ${label} — sending to Apple Vision`, "scan");
+
+  let observations;
+  try {
+    const resp = await Promise.race([
+      api.runtime.sendMessage({
+        type: "NATIVE_OCR",
+        url: img.src,
+        referer: location.href,
+      }),
+      new Promise((_, r) => setTimeout(() => r(new Error("timeout")), 30_000)),
+    ]);
+    if (!resp?.ok) {
+      devLog(`[ERR]  ${label}: OCR failed — ${resp?.error}`, "err");
+      return;
+    }
+    observations = resp.observations ?? [];
+  } catch (err) {
+    devLog(`[ERR]  ${label}: ${err?.message ?? String(err)}`, "err");
     return;
   }
 
-  const regions = await window._LT.findBubbles(canvas);
-  if (!regions.length) {
-    devLog(`[SKIP] ${label} — no speech bubbles detected`, "skip");
+  if (!observations.length) {
+    devLog(`[SKIP] ${label} — no text detected by Vision`, "skip");
     return;
   }
-  devLog(`[IMG]  ${label} — ${regions.length} bubble(s)`, "scan");
+
+  devLog(`[IMG]  ${label} — ${observations.length} text region(s)`, "scan");
 
   const translations = [];
-  for (let i = 0; i < regions.length; i++) {
-    const ocr = await window._LT.recognize(canvas, regions[i], { lang: STATE.sourceLang });
-    const raw = ocr.text?.trim() ?? "";
-    if (!raw) { devLog(`  bubble ${i + 1}: no text`, "skip"); continue; }
-    devLog(`  bubble ${i + 1}: "${raw.slice(0, 50).replace(/\n/g, " ")}" (${Math.round(ocr.confidence ?? 0)}%)`, "ocr");
-    const english = await translateViaBackground(raw, ocr.detectedLang ?? STATE.sourceLang);
-    devLog(`  bubble ${i + 1}: → "${english.slice(0, 60).replace(/\n/g, " ")}"`, "xlat");
-    translations.push({ region: regions[i], original: raw, english });
+  for (let i = 0; i < observations.length; i++) {
+    const obs = observations[i];
+    const raw = (obs.text ?? "").trim();
+    if (!raw) continue;
+    devLog(`  region ${i + 1}: "${raw.slice(0, 50)}" (${Math.round((obs.confidence ?? 0) * 100)}%)`, "ocr");
+    const english = await translateViaBackground(raw, STATE.sourceLang === "auto" ? "jpn" : STATE.sourceLang);
+    devLog(`  region ${i + 1}: → "${english.slice(0, 60)}"`, "xlat");
+    // obs.x/y/w/h are normalized 0-1; overlay.js divides by canvas size,
+    // so pass a 1×1 "canvas" and the normalized values work directly as fractions.
+    translations.push({ region: { x: obs.x, y: obs.y, w: obs.w, h: obs.h }, original: raw, english });
   }
 
   if (!translations.length) {
@@ -154,9 +106,31 @@ async function processImage(img) {
     return;
   }
 
-  STATE.overlays.set(img, window._LT.renderOverlay(img, canvas, translations));
+  const fakeCanvas = { width: 1, height: 1 };
+  STATE.overlays.set(img, window._LT.renderOverlay(img, fakeCanvas, translations));
   STATE.processed.add(img);
   devLog(`[OK]   ${label} — ${translations.length} overlay(s) placed`, "ok");
+}
+
+// ── Pick-mode banner ──────────────────────────────────────────────────────────
+
+function showPickBanner() {
+  removePickBanner();
+  const el = document.createElement("div");
+  el.id = "_lt_banner";
+  el.textContent = "Local Translator — click an image to translate it";
+  el.style.cssText = [
+    "position:fixed", "top:16px", "left:50%", "transform:translateX(-50%)",
+    "z-index:2147483647", "background:rgba(10,132,255,0.93)", "color:#fff",
+    "padding:10px 20px", "border-radius:10px",
+    "font:600 13px -apple-system,sans-serif",
+    "pointer-events:none", "box-shadow:0 4px 20px rgba(0,0,0,0.3)",
+  ].join(";");
+  document.body.appendChild(el);
+}
+
+function removePickBanner() {
+  document.getElementById("_lt_banner")?.remove();
 }
 
 // ── Click-to-translate ────────────────────────────────────────────────────────
@@ -185,38 +159,12 @@ function attachClickListeners() {
       img.style.outlineOffset = "";
       img.style.cursor = "";
       removePickBanner();
-      const r = img.getBoundingClientRect();
-      devLog(
-        `[CLICK] ${imgLabel(img)} — ` +
-        `${img.naturalWidth}×${img.naturalHeight} natural | ` +
-        `${Math.round(r.width)}×${Math.round(r.height)} displayed`,
-        "scan"
-      );
+      devLog(`[CLICK] ${imgLabel(img)} — ${img.naturalWidth}×${img.naturalHeight}px`, "scan");
       try { await processImage(img); }
-      catch (err) { devLog(`[ERR]  ${imgLabel(img)}:\n  ${errDetail(img, err)}`, "err"); }
+      catch (err) { devLog(`[ERR]  ${imgLabel(img)}: ${err?.message ?? String(err)}`, "err"); }
       await flush();
     }, true);
   }
-}
-
-// ── Pick-mode banner ──────────────────────────────────────────────────────────
-
-function showPickBanner() {
-  removePickBanner();
-  const el = document.createElement("div");
-  el.id = "_lt_banner";
-  el.textContent = "Local Translator — click an image to translate it";
-  el.style.cssText = [
-    "position:fixed", "top:16px", "left:50%", "transform:translateX(-50%)",
-    "z-index:2147483647", "background:rgba(10,132,255,0.93)", "color:#fff",
-    "padding:10px 20px", "border-radius:10px", "font:600 13px/-apple-system,sans-serif",
-    "pointer-events:none", "box-shadow:0 4px 20px rgba(0,0,0,0.3)",
-  ].join(";");
-  document.body.appendChild(el);
-}
-
-function removePickBanner() {
-  document.getElementById("_lt_banner")?.remove();
 }
 
 function clearOverlays() {
