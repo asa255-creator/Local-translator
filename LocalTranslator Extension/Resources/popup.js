@@ -98,17 +98,23 @@ api.storage.onChanged.addListener((changes, area) => {
 });
 
 devClear.addEventListener("click", () => {
+  // Clear DOM immediately so the button feels responsive.
+  devLogEl.innerHTML = "";
+  _lastLen = 0;
+
   _clearPromise = (async () => {
     const epoch = Date.now();
-    // Clear storage first — don't touch the DOM until storage is confirmed cleared.
     await api.storage.local.set({ lt_devLog: [], lt_logEpoch: epoch });
-    // Kill any pending flushes in the content script.
-    await sendToContent({ type: "CLEAR_LOG", epoch });
-    // Reload from storage to show confirmed state (should be empty).
-    devLogEl.innerHTML = "";
-    _lastLen = 0;
+    // Tell content script, but cap the wait so a busy/missing script
+    // can't block the clear from completing.
+    await Promise.race([
+      sendToContent({ type: "CLEAR_LOG", epoch }),
+      new Promise(r => setTimeout(r, 1500)),
+    ]);
+    // Re-read storage to confirm. If something wrote back between the
+    // clear and now, render it so the view matches reality.
     const { lt_devLog: confirmed = [] } = await api.storage.local.get("lt_devLog");
-    renderEntries(confirmed);
+    if (confirmed.length) { renderEntries(confirmed); }
   })();
   _clearPromise.finally(() => { _clearPromise = null; });
 });
