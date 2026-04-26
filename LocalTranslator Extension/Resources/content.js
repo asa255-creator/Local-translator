@@ -15,7 +15,7 @@ const STATE = {
 
 const _queue = [];
 let _flushTimer = null;
-let _clearGen = 0;
+let _clearGen = 0;   // synced with lt_logEpoch in storage on init and on CLEAR_LOG
 
 function devLog(entry, kind) {
   _queue.push({ entry, kind });
@@ -28,9 +28,9 @@ async function flush() {
   const gen = _clearGen;
   const batch = _queue.splice(0);
   try {
-    const { lt_devLog: prev = [] } = await api.storage.local.get("lt_devLog");
-    // Abort if a clear happened while we were waiting for storage.get().
-    if (gen !== _clearGen) return;
+    const { lt_devLog: prev = [], lt_logEpoch = 0 } = await api.storage.local.get(["lt_devLog", "lt_logEpoch"]);
+    // Abort if storage epoch changed (popup cleared) OR local gen changed (CLEAR_LOG arrived).
+    if (lt_logEpoch !== gen || gen !== _clearGen) return;
     await api.storage.local.set({ lt_devLog: [...prev, ...batch].slice(-300) });
   } catch {}
 }
@@ -195,11 +195,11 @@ api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       clearOverlays();
       sendResponse({ ok: true });
     } else if (msg?.type === "CLEAR_LOG") {
-      _clearGen++;
+      _clearGen = msg.epoch ?? (_clearGen + 1);
       _queue.length = 0;
       clearTimeout(_flushTimer);
       _flushTimer = null;
-      await api.storage.local.set({ lt_devLog: [] });
+      await api.storage.local.set({ lt_devLog: [], lt_logEpoch: _clearGen });
       sendResponse({ ok: true });
     } else {
       sendResponse({ ok: false });
@@ -211,8 +211,9 @@ api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 (async function init() {
-  const { sourceLang = "auto" } = await api.storage.local.get("sourceLang");
+  const { sourceLang = "auto", lt_logEpoch = 0 } = await api.storage.local.get(["sourceLang", "lt_logEpoch"]);
   STATE.sourceLang = sourceLang;
+  _clearGen = lt_logEpoch;   // sync with whatever epoch is currently in storage
   attachClickListeners();
 
   new MutationObserver((mutations) => {

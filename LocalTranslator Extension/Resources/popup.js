@@ -101,8 +101,12 @@ devClear.addEventListener("click", () => {
   devLogEl.innerHTML = "";
   _lastLen = 0;
   _clearPromise = (async () => {
-    await sendToContent({ type: "CLEAR_LOG" });
-    await api.storage.local.set({ lt_devLog: [] });
+    // Write the new epoch to storage FIRST — any in-flight flush() in the
+    // content script reads lt_logEpoch and aborts on mismatch, even if
+    // CLEAR_LOG hasn't arrived yet.
+    const epoch = Date.now();
+    await api.storage.local.set({ lt_devLog: [], lt_logEpoch: epoch });
+    await sendToContent({ type: "CLEAR_LOG", epoch });
   })();
   _clearPromise.finally(() => { _clearPromise = null; });
 });
