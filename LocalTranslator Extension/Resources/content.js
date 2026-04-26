@@ -82,19 +82,43 @@ async function imageToCanvas(img) {
     return canvas;
   } catch {}
 
-  // Cross-origin: fetch as blob. Must use a FRESH canvas — once a canvas is
-  // tainted by a cross-origin drawImage it stays tainted even after clearRect.
+  // Content-script fetch (works if the CDN allows cross-origin or the
+  // extension's host_permissions override CORS for this origin).
   try {
     const resp = await fetch(img.src, { credentials: "omit" });
-    if (!resp.ok) return null;
-    const bitmap = await createImageBitmap(await resp.blob());
+    if (resp.ok) {
+      const bitmap = await createImageBitmap(await resp.blob());
+      const fresh = document.createElement("canvas");
+      fresh.width  = img.naturalWidth;
+      fresh.height = img.naturalHeight;
+      fresh.getContext("2d", { willReadFrequently: true }).drawImage(bitmap, 0, 0);
+      bitmap.close?.();
+      return fresh;
+    }
+    devLog(`  direct fetch: HTTP ${resp.status}`, "err");
+  } catch (e) {
+    devLog(`  direct fetch failed: ${e?.message}`, "err");
+  }
+
+  // Last resort: route through the background service worker.
+  // Background scripts bypass CDN CORS restrictions via host_permissions.
+  try {
+    const r = await api.runtime.sendMessage({ type: "FETCH_IMAGE", url: img.src });
+    if (!r?.ok) { devLog(`  bg fetch failed: ${r?.error}`, "err"); return null; }
+    const binary = atob(r.b64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    const bitmap = await createImageBitmap(new Blob([bytes]));
     const fresh = document.createElement("canvas");
     fresh.width  = img.naturalWidth;
     fresh.height = img.naturalHeight;
     fresh.getContext("2d", { willReadFrequently: true }).drawImage(bitmap, 0, 0);
     bitmap.close?.();
     return fresh;
-  } catch { return null; }
+  } catch (e) {
+    devLog(`  bg fetch failed: ${e?.message}`, "err");
+    return null;
+  }
 }
 
 // ── Process one image ─────────────────────────────────────────────────────────
