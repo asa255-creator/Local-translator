@@ -190,6 +190,13 @@ api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     } else if (msg?.type === "CLEAR_OVERLAYS") {
       clearOverlays();
       sendResponse({ ok: true });
+    } else if (msg?.type === "CLEAR_LOG") {
+      // Wipe both the in-memory queue and storage so stale entries can't flush back.
+      _queue.length = 0;
+      clearTimeout(_flushTimer);
+      _flushTimer = null;
+      await api.storage.local.set({ lt_devLog: [] });
+      sendResponse({ ok: true });
     } else {
       sendResponse({ ok: false });
     }

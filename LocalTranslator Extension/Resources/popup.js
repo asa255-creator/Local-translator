@@ -89,10 +89,12 @@ api.storage.onChanged.addListener((changes, area) => {
   renderEntries(entries);
 });
 
-devClear.addEventListener("click", () => {
+devClear.addEventListener("click", async () => {
   devLogEl.innerHTML = "";
   _lastLen = 0;
-  api.storage.local.set({ lt_devLog: [] });
+  await sendToContent({ type: "CLEAR_LOG" });
+  // Fallback: clear storage directly in case content script isn't present.
+  await api.storage.local.set({ lt_devLog: [] });
 });
 
 // ── Init ──────────────────────────────────────────────────────────────────────
