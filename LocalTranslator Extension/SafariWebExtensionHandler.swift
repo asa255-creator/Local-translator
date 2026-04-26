@@ -68,13 +68,16 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
                 }
 
                 guard let cgImage = Self.cgImage(from: data) else {
-                    self.finish(context, ["ok": false, "error": "Cannot decode image data"])
+                    self.finish(context, ["ok": false, "error": "Cannot decode image data (size: \(data.count) bytes)"])
                     return
                 }
 
-                let observations = try await Self.recognizeText(in: cgImage)
-                log.info("OCR: \(observations.count) region(s) in \(urlString)")
-                self.finish(context, ["ok": true, "observations": observations])
+                let imgW = cgImage.width
+                let imgH = cgImage.height
+                let (observations, rawCount) = try await Self.recognizeText(in: cgImage)
+                log.info("OCR: \(rawCount) raw / \(observations.count) kept in \(urlString) (\(imgW)×\(imgH))")
+                self.finish(context, ["ok": true, "observations": observations,
+                                      "imageWidth": imgW, "imageHeight": imgH, "rawCount": rawCount])
 
             } catch {
                 log.error("OCR failed: \(error.localizedDescription)")
@@ -88,13 +91,15 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         return CGImageSourceCreateImageAtIndex(src, 0, nil)
     }
 
-    private static func recognizeText(in cgImage: CGImage) async throws -> [[String: Any]] {
+    // Returns (filtered observations, raw observation count before filtering).
+    private static func recognizeText(in cgImage: CGImage) async throws -> ([[String: Any]], Int) {
         try await withCheckedThrowingContinuation { continuation in
             let request = VNRecognizeTextRequest { req, err in
                 if let err = err { continuation.resume(throwing: err); return }
                 let obs = (req.results as? [VNRecognizedTextObservation]) ?? []
+                let rawCount = obs.count
                 let result: [[String: Any]] = obs.compactMap { o in
-                    guard let top = o.topCandidates(1).first, top.confidence > 0.2 else { return nil }
+                    guard let top = o.topCandidates(1).first, top.confidence >= 0.1 else { return nil }
                     let b = o.boundingBox
                     return [
                         "text":       top.string,
@@ -106,11 +111,11 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
                         "h": Double(b.height),
                     ]
                 }
-                continuation.resume(returning: result)
+                continuation.resume(returning: (result, rawCount))
             }
             request.recognitionLevel = .accurate
             request.recognitionLanguages = ["zh-Hans", "zh-Hant", "ja", "en-US"]
-            request.usesLanguageCorrection = false
+            request.usesLanguageCorrection = true
 
             do {
                 try VNImageRequestHandler(cgImage: cgImage, options: [:]).perform([request])

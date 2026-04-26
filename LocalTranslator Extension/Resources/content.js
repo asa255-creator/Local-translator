@@ -80,17 +80,18 @@ async function processImage(img) {
       return;
     }
     observations = resp.observations ?? [];
+    const dims = resp.imageWidth ? `${resp.imageWidth}×${resp.imageHeight}` : "?×?";
+    if (!observations.length) {
+      devLog(`[SKIP] ${label} — no text detected (Swift image: ${dims}, raw regions: ${resp.rawCount ?? "?"})`, "skip");
+      return;
+    }
+    devLog(`[IMG]  ${label} — ${observations.length} region(s) kept (Swift: ${dims})`, "scan");
   } catch (err) {
     devLog(`[ERR]  ${label}: ${err?.message ?? String(err)}`, "err");
     return;
   }
 
-  if (!observations.length) {
-    devLog(`[SKIP] ${label} — no text detected by Vision`, "skip");
-    return;
-  }
-
-  devLog(`[IMG]  ${label} — ${observations.length} text region(s)`, "scan");
+  if (!observations.length) return;
 
   const translations = [];
   for (let i = 0; i < observations.length; i++) {
