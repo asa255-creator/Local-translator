@@ -69,9 +69,6 @@ let _lastLen = 0;
 let _epoch   = 0;   // current log epoch; entries from other epochs are ignored
 
 function visibleEntries(all) {
-  // Show only entries from the current epoch. Entries with no ep field
-  // (written before epoch tracking was added) are shown only when epoch = 0.
-  if (_epoch === 0) return all;
   return all.filter(e => e.ep === _epoch);
 }
 
@@ -88,8 +85,14 @@ function renderEntries(entries) {
 }
 
 async function loadLog() {
-  const { lt_devLog: all = [], lt_logEpoch = 0 } = await api.storage.local.get(["lt_devLog", "lt_logEpoch"]);
+  let { lt_devLog: all = [], lt_logEpoch = 0 } = await api.storage.local.get(["lt_devLog", "lt_logEpoch"]);
+  if (lt_logEpoch === 0) {
+    lt_logEpoch = Date.now();
+    api.storage.local.set({ lt_logEpoch: lt_logEpoch });
+    sendToContent({ type: "CLEAR_LOG", epoch: lt_logEpoch });
+  }
   _epoch = lt_logEpoch;
+  devLogEl.innerHTML = "";
   _lastLen = 0;
   renderEntries(visibleEntries(all));
 }
