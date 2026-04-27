@@ -46,8 +46,8 @@ function imgLabel(img) {
 async function translateViaBackground(text, lang) {
   try {
     const resp = await Promise.race([
-      api.runtime.sendMessage({ type: "TRANSLATE", text, lang: lang ?? "jpn" }),
-      new Promise((_, r) => setTimeout(() => r(new Error("timeout")), 60_000)),
+      api.runtime.sendMessage({ type: "TRANSLATE", text, lang: lang ?? "auto" }),
+      new Promise((_, r) => setTimeout(() => r(new Error("timeout")), 20_000)),
     ]);
     if (resp?.ok) return resp.text;
     devLog(`  translation error: ${resp?.error}`, "err");
@@ -62,7 +62,7 @@ async function translateViaBackground(text, lang) {
 
 async function processImage(img) {
   const label = imgLabel(img);
-  devLog(`[OCR]  ${label} — sending to Apple Vision`, "scan");
+  devLog(`[OCR]  ${label} — Apple Vision on-device OCR`, "scan");
 
   let observations;
   try {
@@ -81,10 +81,10 @@ async function processImage(img) {
     observations = resp.observations ?? [];
     const dims = resp.imageWidth ? `${resp.imageWidth}×${resp.imageHeight}` : "?×?";
     if (!observations.length) {
-      devLog(`[SKIP] ${label} — no text detected (Swift image: ${dims}, raw regions: ${resp.rawCount ?? "?"})`, "skip");
+      devLog(`[SKIP] ${label} — no text found (${dims}, ${resp.rawCount ?? "?"} raw regions)`, "skip");
       return;
     }
-    devLog(`[IMG]  ${label} — ${observations.length} region(s) kept (Swift: ${dims})`, "scan");
+    devLog(`[IMG]  ${label} — ${observations.length} speech bubble(s) detected (${dims})`, "scan");
   } catch (err) {
     devLog(`[ERR]  ${label}: ${err?.message ?? String(err)}`, "err");
     return;
@@ -92,16 +92,16 @@ async function processImage(img) {
 
   if (!observations.length) return;
 
+  const langLabel = STATE.sourceLang === "auto" ? "auto-detect" : STATE.sourceLang;
   const translations = [];
   for (let i = 0; i < observations.length; i++) {
     const obs = observations[i];
     const raw = (obs.text ?? "").trim();
     if (!raw) continue;
-    devLog(`  region ${i + 1}: "${raw.slice(0, 50)}" (${Math.round((obs.confidence ?? 0) * 100)}%)`, "ocr");
-    const english = await translateViaBackground(raw, STATE.sourceLang === "auto" ? "jpn" : STATE.sourceLang);
-    devLog(`  region ${i + 1}: → "${english.slice(0, 60)}"`, "xlat");
-    // obs.x/y/w/h are normalized 0-1; overlay.js divides by canvas size,
-    // so pass a 1×1 "canvas" and the normalized values work directly as fractions.
+    devLog(`  bubble ${i + 1}: "${raw.slice(0, 50)}" (${Math.round((obs.confidence ?? 0) * 100)}% confidence)`, "ocr");
+    devLog(`  bubble ${i + 1}: translating [${langLabel}] → English via Apple Translation...`, "scan");
+    const english = await translateViaBackground(raw, STATE.sourceLang);
+    devLog(`  bubble ${i + 1}: → "${english.slice(0, 60)}"`, "xlat");
     translations.push({ region: { x: obs.x, y: obs.y, w: obs.w, h: obs.h }, original: raw, english });
   }
 
@@ -113,7 +113,7 @@ async function processImage(img) {
   const fakeCanvas = { width: 1, height: 1 };
   STATE.overlays.set(img, window._LT.renderOverlay(img, fakeCanvas, translations));
   STATE.processed.add(img);
-  devLog(`[OK]   ${label} — ${translations.length} overlay(s) placed`, "ok");
+  devLog(`[OK]   ${label} — ${translations.length} bubble overlay(s) placed`, "ok");
 }
 
 // ── Pick-mode banner ──────────────────────────────────────────────────────────

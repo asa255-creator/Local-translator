@@ -35,8 +35,9 @@ final class TranslationBridge {
     static let shared = TranslationBridge()
     private init() {}
 
-    private var jaHost: LanguageSessionHost?
-    private var zhHost: LanguageSessionHost?
+    private var autoHost: LanguageSessionHost?   // source = nil → Apple auto-detects
+    private var jaHost:   LanguageSessionHost?
+    private var zhHost:   LanguageSessionHost?
 
     func translate(text: String, lang: String) async throws -> String {
         guard !text.isEmpty else { return "" }
@@ -45,13 +46,16 @@ final class TranslationBridge {
     }
 
     private func langHost(for lang: String) -> LanguageSessionHost {
-        let isZh = lang == "chi_sim" || lang == "chi_tra" || lang.hasPrefix("zh")
-        if isZh {
-            if zhHost == nil { zhHost = LanguageSessionHost(sourceLangId: "zh-Hans") }
+        switch lang {
+        case "chi_sim", "chi_tra":
+            if zhHost == nil { zhHost = LanguageSessionHost(sourceLang: Locale.Language(identifier: "zh")) }
             return zhHost!
-        } else {
-            if jaHost == nil { jaHost = LanguageSessionHost(sourceLangId: "ja") }
+        case "jpn":
+            if jaHost == nil { jaHost = LanguageSessionHost(sourceLang: Locale.Language(identifier: "ja")) }
             return jaHost!
+        default: // "auto" or anything unrecognised — let Apple detect the source
+            if autoHost == nil { autoHost = LanguageSessionHost(sourceLang: nil) }
+            return autoHost!
         }
     }
 }
@@ -66,20 +70,19 @@ final class LanguageSessionHost {
     private let requestStream: AsyncStream<TranslationRequest>
     private var window: NSWindow?          // retain to keep SwiftUI lifecycle alive
 
-    init(sourceLangId: String) {
+    init(sourceLang: Locale.Language?) {
         var cont: AsyncStream<TranslationRequest>.Continuation!
         requestStream = AsyncStream(TranslationRequest.self, bufferingPolicy: .unbounded) {
             cont = $0
         }
         streamContinuation = cont
 
-        spawnWorkerWindow(sourceLangId: sourceLangId, stream: requestStream)
+        spawnWorkerWindow(sourceLang: sourceLang, stream: requestStream)
     }
 
-    private func spawnWorkerWindow(sourceLangId: String, stream: AsyncStream<TranslationRequest>) {
-        let source = Locale.Language(identifier: sourceLangId)
+    private func spawnWorkerWindow(sourceLang: Locale.Language?, stream: AsyncStream<TranslationRequest>) {
         let target = Locale.Language(identifier: "en")
-        let workerView = TranslationWorkerView(source: source, target: target, requests: stream)
+        let workerView = TranslationWorkerView(source: sourceLang, target: target, requests: stream)
 
         // A 1×1 borderless window placed off-screen.  It must be ordered on-screen
         // so SwiftUI's onAppear fires and translationTask activates.
@@ -96,7 +99,8 @@ final class LanguageSessionHost {
         win.orderFront(nil)
         window = win
 
-        log.info("Created translation worker window for \(sourceLangId)")
+        let langLabel = sourceLang.map { $0.languageCode?.identifier ?? "?" } ?? "auto"
+        log.info("Created translation worker window for source=\(langLabel)")
     }
 
     func translate(_ text: String) async throws -> String {
@@ -117,7 +121,7 @@ final class LanguageSessionHost {
 @available(macOS 15.0, *)
 private struct TranslationWorkerView: View {
 
-    let source:   Locale.Language
+    let source:   Locale.Language?   // nil → Apple auto-detects source language
     let target:   Locale.Language
     let requests: AsyncStream<TranslationRequest>
 
