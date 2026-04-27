@@ -87,12 +87,7 @@ function renderEntries(entries) {
 }
 
 async function loadLog() {
-  let { lt_devLog: all = [], lt_logEpoch = 0 } = await api.storage.local.get(["lt_devLog", "lt_logEpoch"]);
-  if (lt_logEpoch === 0) {
-    lt_logEpoch = Date.now();
-    api.storage.local.set({ lt_logEpoch: lt_logEpoch });
-    sendToContent({ type: "CLEAR_LOG", epoch: lt_logEpoch });
-  }
+  const { lt_devLog: all = [], lt_logEpoch = 0 } = await api.storage.local.get(["lt_devLog", "lt_logEpoch"]);
   _epoch = lt_logEpoch;
   devLogEl.innerHTML = "";
   _lastLen = 0;
