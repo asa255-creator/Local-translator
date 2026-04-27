@@ -31,7 +31,7 @@ async function flush() {
     const { lt_devLog: prev = [], lt_logEpoch = 0 } = await api.storage.local.get(["lt_devLog", "lt_logEpoch"]);
     // Abort if storage epoch changed (popup cleared) OR local gen changed (CLEAR_LOG arrived).
     if (lt_logEpoch !== gen || gen !== _clearGen) return;
-    await api.storage.local.set({ lt_devLog: [...prev, ...batch].slice(-300) });
+    await api.storage.local.set({ lt_devLog: [...prev, ...batch.map(e => ({ ...e, ep: gen }))].slice(-300) });
   } catch {}
 }
 

@@ -30,15 +30,10 @@ langEl.addEventListener("change", () => {
 
 // ── Buttons ───────────────────────────────────────────────────────────────────
 
-// Holds the in-flight clear promise so Translate can wait for it to finish.
 let _clearPromise = null;
 
 pickBtn.addEventListener("click", async () => {
-  // If the user just clicked Clear, wait for it to fully complete before
-  // sending ENTER_PICK_MODE — otherwise the flush inside ENTER_PICK_MODE
-  // can race with CLEAR_LOG and write old entries back to storage.
   if (_clearPromise) await _clearPromise;
-
   await api.storage.local.set({ sourceLang: langEl.value });
   const tab = await getActiveTab();
   if (!tab?.id) {
@@ -71,6 +66,14 @@ const KIND_CLASS = {
 };
 
 let _lastLen = 0;
+let _epoch   = 0;   // current log epoch; entries from other epochs are ignored
+
+function visibleEntries(all) {
+  // Show only entries from the current epoch. Entries with no ep field
+  // (written before epoch tracking was added) are shown only when epoch = 0.
+  if (_epoch === 0) return all;
+  return all.filter(e => e.ep === _epoch);
+}
 
 function renderEntries(entries) {
   const fresh = entries.slice(_lastLen);
@@ -85,36 +88,33 @@ function renderEntries(entries) {
 }
 
 async function loadLog() {
-  const { lt_devLog: entries = [] } = await api.storage.local.get("lt_devLog");
+  const { lt_devLog: all = [], lt_logEpoch = 0 } = await api.storage.local.get(["lt_devLog", "lt_logEpoch"]);
+  _epoch = lt_logEpoch;
   _lastLen = 0;
-  renderEntries(entries);
+  renderEntries(visibleEntries(all));
 }
 
 api.storage.onChanged.addListener((changes, area) => {
-  if (area !== "local" || !changes.lt_devLog) return;
-  const entries = changes.lt_devLog.newValue ?? [];
-  if (entries.length < _lastLen) { devLogEl.innerHTML = ""; _lastLen = 0; }
-  renderEntries(entries);
+  if (area !== "local") return;
+  if (changes.lt_logEpoch) _epoch = changes.lt_logEpoch.newValue ?? 0;
+  if (!changes.lt_devLog) return;
+  const visible = visibleEntries(changes.lt_devLog.newValue ?? []);
+  if (visible.length < _lastLen) { devLogEl.innerHTML = ""; _lastLen = 0; }
+  renderEntries(visible);
 });
 
 devClear.addEventListener("click", () => {
-  // Clear DOM immediately so the button feels responsive.
   devLogEl.innerHTML = "";
   _lastLen = 0;
 
   _clearPromise = (async () => {
     const epoch = Date.now();
+    _epoch = epoch;
     await api.storage.local.set({ lt_devLog: [], lt_logEpoch: epoch });
-    // Tell content script, but cap the wait so a busy/missing script
-    // can't block the clear from completing.
     await Promise.race([
       sendToContent({ type: "CLEAR_LOG", epoch }),
       new Promise(r => setTimeout(r, 1500)),
     ]);
-    // Re-read storage to confirm. If something wrote back between the
-    // clear and now, render it so the view matches reality.
-    const { lt_devLog: confirmed = [] } = await api.storage.local.get("lt_devLog");
-    if (confirmed.length) { renderEntries(confirmed); }
   })();
   _clearPromise.finally(() => { _clearPromise = null; });
 });
