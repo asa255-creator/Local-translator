@@ -1,5 +1,5 @@
 const api = typeof browser !== "undefined" ? browser : chrome;
-const BUILD = "504a209";
+const BUILD = "41a38cf";
 document.getElementById("build-id").textContent = "build " + BUILD;
 
 const langEl    = document.getElementById("source-lang");
