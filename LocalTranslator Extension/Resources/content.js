@@ -47,7 +47,7 @@ async function translateViaBackground(text, lang) {
   try {
     const resp = await Promise.race([
       api.runtime.sendMessage({ type: "TRANSLATE", text, lang: lang ?? "auto" }),
-      new Promise((_, r) => setTimeout(() => r(new Error("timeout")), 20_000)),
+      new Promise((_, r) => setTimeout(() => r(new Error("timeout")), 55_000)),
     ]);
     if (resp?.ok) return resp.text;
     devLog(`  translation error: ${resp?.error}`, "err");
@@ -189,6 +189,8 @@ api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       attachClickListeners();
       showPickBanner();
       devLog("[PICK] Click an image to translate it.", "scan");
+      // Start loading the translation model now so it's ready when an image is clicked.
+      api.runtime.sendMessage({ type: "PREWARM_TRANSLATE" }).catch(() => {});
       sendResponse({ ok: true });
     } else if (msg?.type === "CLEAR_OVERLAYS") {
       clearOverlays();

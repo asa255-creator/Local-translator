@@ -22,6 +22,12 @@ api.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     return true;
   }
 
+  if (msg?.type === "PREWARM_TRANSLATE") {
+    translate(".", "auto").catch(() => {});
+    sendResponse({ ok: true });
+    return true;
+  }
+
   if (msg?.type === "FETCH_IMAGE") {
     fetch(msg.url, { credentials: "omit" })
       .then((r) => {

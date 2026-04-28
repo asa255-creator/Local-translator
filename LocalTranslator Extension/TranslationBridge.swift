@@ -84,17 +84,19 @@ final class LanguageSessionHost {
         let target = Locale.Language(identifier: "en")
         let workerView = TranslationWorkerView(source: sourceLang, target: target, requests: stream)
 
-        // A 1×1 borderless window placed off-screen.  It must be ordered on-screen
-        // so SwiftUI's onAppear fires and translationTask activates.
+        // Completely off-screen 1×1 window. alphaValue=0 makes it invisible.
+        // orderFront is required for SwiftUI onAppear to fire and activiate translationTask.
         let win = NSWindow(
-            contentRect: NSRect(x: -2, y: -2, width: 1, height: 1),
+            contentRect: NSRect(x: -10000, y: -10000, width: 1, height: 1),
             styleMask: [.borderless],
             backing:   .buffered,
             defer:     false
         )
         win.isReleasedWhenClosed  = false
-        win.collectionBehavior    = [.canJoinAllSpaces, .transient]
+        win.collectionBehavior    = [.canJoinAllSpaces, .transient, .ignoresCycle]
         win.ignoresMouseEvents    = true
+        win.hasShadow             = false
+        win.alphaValue            = 0
         win.contentViewController = NSHostingController(rootView: workerView)
         win.orderFront(nil)
         window = win
