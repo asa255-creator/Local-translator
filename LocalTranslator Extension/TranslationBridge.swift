@@ -68,7 +68,7 @@ final class LanguageSessionHost {
 
     private var streamContinuation: AsyncStream<TranslationRequest>.Continuation?
     private let requestStream: AsyncStream<TranslationRequest>
-    private var window: NSWindow?          // retain to keep SwiftUI lifecycle alive
+    private var window: NSPanel?            // retain to keep SwiftUI lifecycle alive
 
     init(sourceLang: Locale.Language?) {
         var cont: AsyncStream<TranslationRequest>.Continuation!
@@ -84,20 +84,26 @@ final class LanguageSessionHost {
         let target = Locale.Language(identifier: "en")
         let workerView = TranslationWorkerView(source: sourceLang, target: target, requests: stream)
 
-        // Completely off-screen 1×1 window. alphaValue=0 makes it invisible.
-        // orderFront is required for SwiftUI onAppear to fire and activiate translationTask.
-        let win = NSWindow(
-            contentRect: NSRect(x: -10000, y: -10000, width: 1, height: 1),
-            styleMask: [.borderless],
-            backing:   .buffered,
-            defer:     false
+        // NSPanel with .nonactivatingPanel never steals focus or activates the host app.
+        // alphaValue=0 makes it invisible. orderFront is still required so SwiftUI's
+        // onAppear fires and .translationTask activates.
+        let win = NSPanel(
+            contentRect: NSRect(x: -50000, y: -50000, width: 1, height: 1),
+            styleMask:   [.borderless, .nonactivatingPanel],
+            backing:     .buffered,
+            defer:       false
         )
-        win.isReleasedWhenClosed  = false
-        win.collectionBehavior    = [.canJoinAllSpaces, .transient, .ignoresCycle]
-        win.ignoresMouseEvents    = true
-        win.hasShadow             = false
-        win.alphaValue            = 0
-        win.contentViewController = NSHostingController(rootView: workerView)
+        win.isReleasedWhenClosed     = false
+        win.isFloatingPanel          = true
+        win.hidesOnDeactivate        = false
+        win.isExcludedFromWindowsMenu = true
+        win.collectionBehavior       = [.canJoinAllSpaces, .transient, .ignoresCycle, .stationary]
+        win.ignoresMouseEvents       = true
+        win.hasShadow                = false
+        win.alphaValue               = 0
+        win.backgroundColor          = .clear
+        win.isOpaque                 = false
+        win.contentViewController    = NSHostingController(rootView: workerView)
         win.orderFront(nil)
         window = win
 

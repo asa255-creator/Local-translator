@@ -114,8 +114,8 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
                 continuation.resume(returning: (result, rawCount))
             }
             request.recognitionLevel = .accurate
-            request.recognitionLanguages = ["zh-Hans", "zh-Hant", "ja", "en-US"]
-            request.usesLanguageCorrection = true
+            request.recognitionLanguages = ["ja", "zh-Hant", "zh-Hans", "en-US"]
+            request.usesLanguageCorrection = false
 
             do {
                 try VNImageRequestHandler(cgImage: cgImage, options: [:]).perform([request])

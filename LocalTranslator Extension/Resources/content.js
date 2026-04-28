@@ -84,7 +84,7 @@ async function processImage(img) {
       devLog(`[SKIP] ${label} — no text found (${dims}, ${resp.rawCount ?? "?"} raw regions)`, "skip");
       return;
     }
-    devLog(`[IMG]  ${label} — ${observations.length} speech bubble(s) detected (${dims})`, "scan");
+    devLog(`[IMG]  ${label} — ${observations.length} text region(s) kept of ${resp.rawCount ?? "?"} detected (${dims})`, "scan");
   } catch (err) {
     devLog(`[ERR]  ${label}: ${err?.message ?? String(err)}`, "err");
     return;
